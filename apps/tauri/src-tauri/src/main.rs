@@ -1238,7 +1238,7 @@ WantedBy=default.target
 	{
 		use std::io::Write;
 
-		tracing::info!("Installing daemon as Windows scheduled task");
+		tracing::info!("Installing daemon as Windows startup item");
 
 		// Stop any existing daemon child process first
 		{
@@ -1258,96 +1258,51 @@ WantedBy=default.target
 
 		let daemon_path = find_daemon_binary()?;
 
-		// Delete existing task if it exists
+		// Remove old schtasks entry if it exists (migration from older versions)
 		let _ = std::process::Command::new("schtasks")
 			.args(&["/Delete", "/TN", "SpacedriveDaemon", "/F"])
 			.output();
 
-		// Create XML for scheduled task
-		let task_xml = format!(
-			r#"<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Description>Spacedrive Daemon Background Service</Description>
-  </RegistrationInfo>
-  <Triggers>
-    <LogonTrigger>
-      <Enabled>true</Enabled>
-    </LogonTrigger>
-  </Triggers>
-  <Principals>
-    <Principal>
-      <LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-    <AllowStartOnDemand>true</AllowStartOnDemand>
-    <Enabled>true</Enabled>
-    <Hidden>false</Hidden>
-    <RunOnlyIfIdle>false</RunOnlyIfIdle>
-    <WakeToRun>false</WakeToRun>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <Priority>7</Priority>
-  </Settings>
-  <Actions>
-    <Exec>
-      <Command>{}</Command>
-      <Arguments>--data-dir "{}"</Arguments>
-    </Exec>
-  </Actions>
-</Task>"#,
+		// Add to HKCU\Run for auto-start on login (no admin required)
+		let daemon_cmd = format!(
+			"\"{}\" --data-dir \"{}\"",
 			daemon_path.display(),
 			data_dir.display()
 		);
 
-		// Write XML to temp file
-		let temp_dir = std::env::temp_dir();
-		let xml_path = temp_dir.join("spacedrive-task.xml");
-		let mut file = std::fs::File::create(&xml_path)
-			.map_err(|e| format!("Failed to create task XML: {}", e))?;
-		file.write_all(task_xml.as_bytes())
-			.map_err(|e| format!("Failed to write task XML: {}", e))?;
-		drop(file);
-
-		// Create the scheduled task
-		let output = std::process::Command::new("schtasks")
+		let reg_output = std::process::Command::new("reg")
 			.args(&[
-				"/Create",
-				"/TN",
+				"add",
+				r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+				"/v",
 				"SpacedriveDaemon",
-				"/XML",
-				xml_path.to_str().unwrap(),
+				"/t",
+				"REG_SZ",
+				"/d",
+				&daemon_cmd,
+				"/f",
 			])
 			.output()
-			.map_err(|e| format!("Failed to create scheduled task: {}", e))?;
+			.map_err(|e| format!("Failed to set registry autostart: {}", e))?;
 
-		// Clean up temp file
-		let _ = std::fs::remove_file(&xml_path);
-
-		if !output.status.success() {
-			let stderr = String::from_utf8_lossy(&output.stderr);
-			tracing::error!("schtasks create failed: {:?}", stderr);
-			return Err(format!("Failed to create scheduled task: {}", stderr));
+		if !reg_output.status.success() {
+			let stderr = String::from_utf8_lossy(&reg_output.stderr);
+			tracing::error!("Registry autostart failed: {:?}", stderr);
+			return Err(format!("Failed to set autostart registry key: {}", stderr));
 		}
 
-		// Start the task
-		let output = std::process::Command::new("schtasks")
-			.args(&["/Run", "/TN", "SpacedriveDaemon"])
-			.output()
-			.map_err(|e| format!("Failed to start scheduled task: {}", e))?;
+		tracing::info!("Added daemon to HKCU\\Run for auto-start");
 
-		if !output.status.success() {
-			let stderr = String::from_utf8_lossy(&output.stderr);
-			tracing::error!("schtasks run failed: {:?}", stderr);
-			return Err(format!("Failed to start daemon task: {}", stderr));
-		}
+		// Start daemon as a detached process immediately
+		let child = std::process::Command::new(&daemon_path)
+			.args(&["--data-dir", &data_dir.to_string_lossy()])
+			.stdin(std::process::Stdio::null())
+			.stdout(std::process::Stdio::null())
+			.stderr(std::process::Stdio::null())
+			.spawn()
+			.map_err(|e| format!("Failed to start daemon: {}", e))?;
+
+		tracing::info!("Started daemon process (PID: {})", child.id());
 
 		// Update daemon state - we no longer own the process
 		let mut state = daemon_state.write().await;
@@ -1356,8 +1311,8 @@ WantedBy=default.target
 		tracing::info!("Updated daemon state: started_by_us = false");
 		drop(state);
 
-		// Reset connection pool so it can reconnect to the service-managed daemon
-		tracing::info!("Resetting connection pool to reconnect to service daemon");
+		// Reset connection pool so it can reconnect to the new daemon
+		tracing::info!("Resetting connection pool to reconnect to daemon");
 		app_state.connection_pool.reset().await;
 
 		// Wait for daemon to start and become available
@@ -1439,23 +1394,31 @@ async fn uninstall_daemon_service() -> Result<(), String> {
 
 	#[cfg(target_os = "windows")]
 	{
-		// Stop the task first
+		// Remove old schtasks entry if it exists (migration from older versions)
 		let _ = std::process::Command::new("schtasks")
 			.args(&["/End", "/TN", "SpacedriveDaemon"])
 			.output();
-
-		// Delete the scheduled task
-		let output = std::process::Command::new("schtasks")
+		let _ = std::process::Command::new("schtasks")
 			.args(&["/Delete", "/TN", "SpacedriveDaemon", "/F"])
-			.output()
-			.map_err(|e| format!("Failed to delete scheduled task: {}", e))?;
+			.output();
 
-		// It's okay if the task doesn't exist
+		// Remove from HKCU\Run
+		let output = std::process::Command::new("reg")
+			.args(&[
+				"delete",
+				r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+				"/v",
+				"SpacedriveDaemon",
+				"/f",
+			])
+			.output()
+			.map_err(|e| format!("Failed to remove registry autostart: {}", e))?;
+
 		if !output.status.success() {
 			let stderr = String::from_utf8_lossy(&output.stderr);
-			// Task not found is okay, other errors should be reported
-			if !stderr.contains("cannot find") && !stderr.is_empty() {
-				tracing::warn!("schtasks delete warning: {:?}", stderr);
+			// Key not found is okay
+			if !stderr.contains("unable to find") && !stderr.is_empty() {
+				tracing::warn!("Registry delete warning: {:?}", stderr);
 			}
 		}
 

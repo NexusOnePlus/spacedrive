@@ -12,8 +12,9 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::trace;
 
-/// Timeout for event stabilization
-const STABILIZATION_TIMEOUT_MS: u64 = 100;
+/// Timeout for event stabilization (50ms is sufficient — ReadDirectoryChangesW
+/// already batches events, so we only need minimal debouncing)
+const STABILIZATION_TIMEOUT_MS: u64 = 50;
 
 /// Windows event handler
 pub struct WindowsHandler {

@@ -51,7 +51,7 @@ impl LocalBackend {
 	#[cfg(windows)]
 	fn get_inode(path: &Path, _metadata: &std::fs::Metadata) -> Option<u64> {
 		use std::os::windows::ffi::OsStrExt;
-		use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_READ, INVALID_HANDLE_VALUE};
+		use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
 		use windows_sys::Win32::Storage::FileSystem::{
 			CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
 			FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
@@ -61,12 +61,13 @@ impl LocalBackend {
 		// Convert path to wide string for Windows API
 		let wide_path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
 
-		// Use CreateFileW with FILE_FLAG_BACKUP_SEMANTICS to allow opening directories.
-		// std::fs::File::open fails for directories on Windows without this flag.
+		// Use FILE_READ_ATTRIBUTES (0x80) instead of GENERIC_READ — much cheaper,
+		// doesn't require read permission on the file content, and sufficient for
+		// retrieving file ID via GetFileInformationByHandle.
 		let handle = unsafe {
 			CreateFileW(
 				wide_path.as_ptr(),
-				GENERIC_READ,
+				0x80, // FILE_READ_ATTRIBUTES
 				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
 				std::ptr::null_mut(),
 				OPEN_EXISTING,
@@ -107,6 +108,20 @@ impl LocalBackend {
 	#[cfg(not(any(unix, windows)))]
 	fn get_inode(_path: &Path, _metadata: &std::fs::Metadata) -> Option<u64> {
 		None
+	}
+
+	/// Detect NTFS junctions and other reparse points on Windows.
+	/// `is_symlink()` only catches true symlinks, not junctions created with `mklink /J`.
+	#[cfg(windows)]
+	fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
+		use std::os::windows::fs::MetadataExt;
+		const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+		metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+	}
+
+	#[cfg(not(windows))]
+	fn is_reparse_point(_metadata: &std::fs::Metadata) -> bool {
+		false
 	}
 }
 
@@ -186,10 +201,13 @@ impl VolumeBackend for LocalBackend {
 				Err(_) => continue, // Skip entries we can't read
 			};
 
-			let kind = if metadata.is_dir() {
-				EntryKind::Directory
-			} else if metadata.is_symlink() {
+			let kind = if metadata.is_symlink() {
 				EntryKind::Symlink
+			} else if Self::is_reparse_point(&metadata) {
+				// NTFS junctions and other reparse points (Windows-specific)
+				EntryKind::Symlink
+			} else if metadata.is_dir() {
+				EntryKind::Directory
 			} else {
 				EntryKind::File
 			};
@@ -216,10 +234,12 @@ impl VolumeBackend for LocalBackend {
 			.await
 			.map_err(|e| VolumeError::Io(e))?;
 
-		let kind = if metadata.is_dir() {
-			EntryKind::Directory
-		} else if metadata.is_symlink() {
+		let kind = if metadata.is_symlink() {
 			EntryKind::Symlink
+		} else if Self::is_reparse_point(&metadata) {
+			EntryKind::Symlink
+		} else if metadata.is_dir() {
+			EntryKind::Directory
 		} else {
 			EntryKind::File
 		};
