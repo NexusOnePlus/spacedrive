@@ -167,6 +167,21 @@ export const platform: Platform = {
 		await window.close();
 	},
 
+	async minimizeWindow() {
+		const window = getCurrentWebviewWindow();
+		await window.minimize();
+	},
+
+	async toggleMaximizeWindow() {
+		const window = getCurrentWebviewWindow();
+		await window.toggleMaximize();
+	},
+
+	async isWindowMaximized() {
+		const window = getCurrentWebviewWindow();
+		return await window.isMaximized();
+	},
+
 	async getSelectedFileIds() {
 		return await invoke<string[]>("get_selected_file_ids");
 	},

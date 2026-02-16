@@ -489,7 +489,8 @@ impl IndexerJob {
 
 		ctx.log(&metrics.format_summary());
 
-		#[cfg(feature = "ffmpeg")]
+		// Dispatch thumbnail generation for deep indexing (image thumbnails always work,
+		// video thumbnails require the ffmpeg feature)
 		if self.config.mode == IndexMode::Deep && !self.config.is_ephemeral() {
 			use crate::ops::media::thumbnail::{ThumbnailJob, ThumbnailJobConfig};
 

@@ -141,6 +141,17 @@ export type Platform = {
 	/** Apply macOS titlebar styling (Tauri/macOS only) */
 	applyMacOSStyling?(): Promise<void>;
 
+	// Window control API (Tauri only, used for custom titlebar on Windows)
+
+	/** Minimize the current window */
+	minimizeWindow?(): Promise<void>;
+
+	/** Toggle maximize/restore the current window */
+	toggleMaximizeWindow?(): Promise<void>;
+
+	/** Check if the current window is maximized */
+	isWindowMaximized?(): Promise<boolean>;
+
 	// Drag and Drop API (Tauri only)
 
 	/** Start a native drag operation */

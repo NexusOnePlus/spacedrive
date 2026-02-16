@@ -388,6 +388,13 @@ fn create_window(
 		builder = builder.hidden_title(true);
 	}
 
+	// Windows: Disable native decorations so frontend renders custom titlebar
+	// with window controls on the right side (Windows-style)
+	#[cfg(target_os = "windows")]
+	if decorations {
+		builder = builder.decorations(false);
+	}
+
 	// Enable DevTools in dev mode
 	#[cfg(debug_assertions)]
 	{
