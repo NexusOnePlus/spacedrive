@@ -5,6 +5,7 @@
 //! portable volume ownership changes - updating a volume's device_id automatically
 //! transfers ownership of all locations and entries on that volume.
 
+use sea_orm::Statement;
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -13,26 +14,40 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
 	async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-		// Add volume_id column (nullable for lazy resolution)
-		manager
-			.alter_table(
-				Table::alter()
-					.table(Locations::Table)
-					.add_column(ColumnDef::new(Locations::VolumeId).integer())
-					.to_owned(),
-			)
-			.await?;
+		let db = manager.get_connection();
 
-		// Add index for efficient joins (SQLite doesn't support adding FKs to existing tables)
-		manager
-			.create_index(
-				Index::create()
-					.name("idx_locations_volume_id")
-					.table(Locations::Table)
-					.col(Locations::VolumeId)
-					.to_owned(),
-			)
-			.await?;
+		// Check if volume_id column already exists (idempotent for partial migration recovery)
+		let has_column = db
+			.query_all(Statement::from_string(
+				sea_orm::DatabaseBackend::Sqlite,
+				"PRAGMA table_info(locations)".to_string(),
+			))
+			.await?
+			.iter()
+			.any(|row| {
+				use sea_orm::QueryResult;
+				row.try_get::<String>("", "name")
+					.map(|n| n == "volume_id")
+					.unwrap_or(false)
+			});
+
+		if !has_column {
+			// Add volume_id column (nullable for lazy resolution)
+			manager
+				.alter_table(
+					Table::alter()
+						.table(Locations::Table)
+						.add_column(ColumnDef::new(Locations::VolumeId).integer())
+						.to_owned(),
+				)
+				.await?;
+		}
+
+		// Add index for efficient joins (use raw SQL for IF NOT EXISTS idempotency)
+		db.execute_unprepared(
+			"CREATE INDEX IF NOT EXISTS idx_locations_volume_id ON locations (volume_id)",
+		)
+		.await?;
 
 		// Note: No backfill - volume_id will be resolved lazily at runtime
 		// when locations are accessed. This avoids complex SQL logic and ensures

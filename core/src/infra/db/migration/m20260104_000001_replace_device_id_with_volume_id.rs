@@ -6,6 +6,7 @@
 //! through the volume relationship. This makes portable volume ownership
 //! changes O(1) instead of O(millions).
 
+use sea_orm::Statement;
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -16,26 +17,39 @@ impl MigrationTrait for Migration {
 	async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
 		let db = manager.get_connection();
 
-		// 1. Add the volume_id column (nullable for migration)
-		manager
-			.alter_table(
-				Table::alter()
-					.table(Entries::Table)
-					.add_column(ColumnDef::new(Entries::VolumeId).integer())
-					.to_owned(),
-			)
-			.await?;
+		// Check if volume_id column already exists (idempotent for partial migration recovery)
+		let has_column = db
+			.query_all(Statement::from_string(
+				sea_orm::DatabaseBackend::Sqlite,
+				"PRAGMA table_info(entries)".to_string(),
+			))
+			.await?
+			.iter()
+			.any(|row| {
+				use sea_orm::QueryResult;
+				row.try_get::<String>("", "name")
+					.map(|n| n == "volume_id")
+					.unwrap_or(false)
+			});
+
+		if !has_column {
+			// 1. Add the volume_id column (nullable for migration)
+			manager
+				.alter_table(
+					Table::alter()
+						.table(Entries::Table)
+						.add_column(ColumnDef::new(Entries::VolumeId).integer())
+						.to_owned(),
+				)
+				.await?;
+		}
 
 		// 2. Add index for efficient joins (SQLite doesn't support adding FKs to existing tables)
-		manager
-			.create_index(
-				Index::create()
-					.name("idx_entries_volume_id")
-					.table(Entries::Table)
-					.col(Entries::VolumeId)
-					.to_owned(),
-			)
-			.await?;
+		// Use IF NOT EXISTS via raw SQL for idempotency
+		db.execute_unprepared(
+			"CREATE INDEX IF NOT EXISTS idx_entries_volume_id ON entries (volume_id)",
+		)
+		.await?;
 
 		// 4. Backfill entries.volume_id by finding each entry's location
 		// This traverses the entry tree to find the root, then looks up which

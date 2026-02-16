@@ -249,6 +249,18 @@ impl IndexerJob {
 			p.to_path_buf()
 		} else if let Some(cloud_path) = self.config.path.cloud_path() {
 			PathBuf::from(cloud_path)
+		} else if self.config.is_ephemeral() {
+			// For ephemeral indexing, accept any Physical path whose filesystem path exists
+			// locally, even if the device_slug doesn't match the current device (e.g., volume
+			// fingerprint used as slug from the frontend)
+			match &self.config.path {
+				SdPath::Physical { path, .. } if path.exists() => path.to_path_buf(),
+				_ => {
+					return Err(JobError::execution(
+						"Ephemeral indexing path is not accessible locally".to_string(),
+					));
+				}
+			}
 		} else if !self.config.is_ephemeral() {
 			let loc_uuid = self
 				.config

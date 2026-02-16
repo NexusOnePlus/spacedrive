@@ -42,7 +42,7 @@
       },
       "assetProtocol": {
         "enable": true,
-        "scope": ["$HOME/**", "/Volumes/**"]
+        "scope": ["$HOME/**", "/Volumes/**", "$APPDATA/**", "C:\\**", "D:\\**", "E:\\**", "F:\\**"]
       }
     }
   },

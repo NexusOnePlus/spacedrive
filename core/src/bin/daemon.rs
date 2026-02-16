@@ -75,7 +75,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	};
 
 	#[cfg(not(unix))]
-	let terminate = std::future::pending::<()>();
+	let terminate = async {
+		// On Windows, listen for CTRL_CLOSE, CTRL_SHUTDOWN, and CTRL_LOGOFF events
+		// These are sent when the console is closed, system shuts down, or user logs off
+		let mut close = signal::windows::ctrl_close()
+			.expect("failed to install ctrl_close handler");
+		close.recv().await;
+	};
 
 	// Run the daemon server with signal handling
 	tokio::select! {
@@ -91,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			Ok(())
 		}
 		() = terminate => {
-			println!("Received SIGTERM, shutting down gracefully...");
+			println!("Received terminate signal, shutting down gracefully...");
 			Ok(())
 		}
 	}

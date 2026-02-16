@@ -140,23 +140,21 @@ fn is_process_running(pid: u32) -> bool {
 }
 
 /// Check if a process is still running (Windows implementation)
+/// Uses Win32 OpenProcess API instead of spawning tasklist.exe (~500ms → <1ms)
 #[cfg(windows)]
 fn is_process_running(pid: u32) -> bool {
-	use std::process::Command;
+	use windows_sys::Win32::Foundation::CloseHandle;
+	use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-	match Command::new("tasklist")
-		.arg("/fi")
-		.arg(&format!("pid eq {}", pid))
-		.arg("/fo")
-		.arg("csv")
-		.output()
-	{
-		Ok(output) => {
-			let output_str = String::from_utf8_lossy(&output.stdout);
-			output_str.lines().count() > 1 // Header + process line if exists
-		}
-		Err(_) => false,
+	// SAFETY: OpenProcess is safe to call with any PID - returns 0 (null handle) on failure
+	let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+	if handle == 0 {
+		// Process doesn't exist or we don't have access (treat as not running)
+		return false;
 	}
+	// Process exists, close the handle
+	unsafe { CloseHandle(handle) };
+	true
 }
 
 impl Drop for LibraryLock {
