@@ -251,11 +251,11 @@ function App() {
 				<SpacedriveProvider client={client}>
 					<ServerProvider>
 						<JobsProvider>
-							<div className="h-screen bg-app overflow-hidden pt-[52px]">
-								{/* Drag region for macOS traffic lights area */}
+							<div className={`h-screen bg-app overflow-hidden ${navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac') ? 'pt-[52px]' : 'pt-3'}`}>
+								{/* Drag region for titlebar area */}
 								<div
 									data-tauri-drag-region
-									className="absolute inset-x-0 top-0 h-[52px] z-50"
+									className={`absolute inset-x-0 top-0 ${navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac') ? 'h-[52px]' : 'h-3'} z-50`}
 								/>
 								<PopoutInspector />
 							</div>
