@@ -157,9 +157,9 @@ async function main() {
             }
         });
 
-        // Wait for daemon to be ready
+        // Wait for daemon to be ready (90s timeout for first-time init with migrations)
         console.log("Waiting for daemon to be ready...");
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 90; i++) {
             try {
                 const { connect } = await import("net");
                 await new Promise<void>((resolve, reject) => {
@@ -174,8 +174,8 @@ async function main() {
                 console.log(`Daemon ready at ${DAEMON_ADDR}`);
                 break;
             } catch (e) {
-                if (i === 29) {
-                    throw new Error("Daemon failed to start (connection not available)");
+                if (i === 89) {
+                    throw new Error("Daemon failed to start (connection not available after 90s)");
                 }
                 await new Promise((resolve) => setTimeout(resolve, 1000));
             }

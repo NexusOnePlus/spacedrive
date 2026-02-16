@@ -9,43 +9,19 @@ use crate::Core;
 pub async fn start_default_server(
 	socket_addr: String,
 	data_dir: PathBuf,
-	enable_networking: bool,
+	_enable_networking: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	// Initialize basic tracing with file logging first
 	initialize_tracing_with_file_logging(&data_dir)?;
 
-	// Create a single Core instance
-	let mut core = Core::new(data_dir.clone())
+	// Create a single Core instance (handles volumes, libraries, networking internally)
+	let core = Core::new(data_dir.clone())
 		.await
 		.map_err(|e| format!("Failed to create core: {}", e))?;
 
 	info!("Starting Spacedrive daemon");
 	info!("Data directory: {:?}", data_dir);
 	info!("Socket address: {}", socket_addr);
-	info!("Networking enabled: {}", enable_networking);
-
-	// Initialize networking before starting the server.
-	// Use a timeout so the RPC server can still start if networking is slow
-	// (e.g., Iroh P2P discovery on Windows can take a long time).
-	if enable_networking {
-		info!("Initializing networking (timeout: 15s)...");
-		match tokio::time::timeout(
-			std::time::Duration::from_secs(15),
-			core.init_networking(),
-		)
-		.await
-		{
-			Ok(Ok(())) => info!("Networking initialized successfully"),
-			Ok(Err(e)) => warn!(
-				"Failed to initialize networking: {}. P2P features will be unavailable.",
-				e
-			),
-			Err(_) => warn!(
-				"Networking initialization timed out after 15s. \
-				 Starting server without P2P. Networking will retry in background."
-			),
-		}
-	}
 
 	let core = Arc::new(core);
 

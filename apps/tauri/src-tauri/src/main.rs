@@ -978,11 +978,16 @@ async fn check_daemon_installed() -> Result<bool, String> {
 
 	#[cfg(target_os = "windows")]
 	{
-		// On Windows, check if scheduled task exists
-		let output = std::process::Command::new("schtasks")
-			.args(&["/Query", "/TN", "SpacedriveDaemon", "/FO", "LIST"])
+		// Check HKCU\Run registry for autostart entry
+		let output = std::process::Command::new("reg")
+			.args(&[
+				"query",
+				r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+				"/v",
+				"SpacedriveDaemon",
+			])
 			.output()
-			.map_err(|e| format!("Failed to query scheduled task: {}", e))?;
+			.map_err(|e| format!("Failed to query registry: {}", e))?;
 
 		Ok(output.status.success())
 	}
@@ -1546,19 +1551,19 @@ async fn start_daemon(
 		.spawn()
 		.map_err(|e| format!("Failed to start daemon: {}", e))?;
 
-	// Wait for daemon to be ready
-	for i in 0..30 {
+	// Wait for daemon to be ready (up to 90s for first-time init with migrations)
+	for i in 0..900 {
 		tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 		if is_daemon_running(socket_addr).await {
 			tracing::info!("Daemon ready at {}", socket_addr);
 			return Ok(child);
 		}
-		if i == 10 {
+		if i == 30 {
 			tracing::warn!("Daemon taking longer than expected to start...");
 		}
 	}
 
-	Err("Daemon failed to start (connection not available after 3 seconds)".to_string())
+	Err("Daemon failed to start (connection not available after 90 seconds)".to_string())
 }
 
 fn setup_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -1997,6 +2002,16 @@ fn main() {
 					},
 				);
 				tracing::info!("Drag ended callback registered");
+			}
+
+			// Windows: Remove native decorations so frontend renders custom titlebar
+			#[cfg(target_os = "windows")]
+			{
+				if let Some(window) = app.get_webview_window("main") {
+					tracing::info!("Applying Windows window customizations...");
+					let _ = window.set_decorations(false);
+					tracing::info!("Windows decorations disabled (using custom titlebar)");
+				}
 			}
 
 			// Get data directory (use default Spacedrive location)
