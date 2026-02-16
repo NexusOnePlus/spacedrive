@@ -19,19 +19,35 @@ pub async fn start_default_server(
 		.await
 		.map_err(|e| format!("Failed to create core: {}", e))?;
 
-	// Initialize networking if enabled
-	if enable_networking {
-		core.init_networking()
-			.await
-			.map_err(|e| format!("Failed to initialize networking: {}", e))?;
-	}
-
-	let core = Arc::new(core);
-
 	info!("Starting Spacedrive daemon");
 	info!("Data directory: {:?}", data_dir);
 	info!("Socket address: {}", socket_addr);
 	info!("Networking enabled: {}", enable_networking);
+
+	// Initialize networking before starting the server.
+	// Use a timeout so the RPC server can still start if networking is slow
+	// (e.g., Iroh P2P discovery on Windows can take a long time).
+	if enable_networking {
+		info!("Initializing networking (timeout: 15s)...");
+		match tokio::time::timeout(
+			std::time::Duration::from_secs(15),
+			core.init_networking(),
+		)
+		.await
+		{
+			Ok(Ok(())) => info!("Networking initialized successfully"),
+			Ok(Err(e)) => warn!(
+				"Failed to initialize networking: {}. P2P features will be unavailable.",
+				e
+			),
+			Err(_) => warn!(
+				"Networking initialization timed out after 15s. \
+				 Starting server without P2P. Networking will retry in background."
+			),
+		}
+	}
+
+	let core = Arc::new(core);
 
 	// Log file descriptor limits for debugging
 	#[cfg(unix)]
