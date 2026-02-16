@@ -3,5 +3,12 @@
     "resources": {
       "../../.deps/bin/*.dll": "./"
     }
+  },
+  "app": {
+    "windows": [
+      {
+        "decorations": false
+      }
+    ]
   }
 }

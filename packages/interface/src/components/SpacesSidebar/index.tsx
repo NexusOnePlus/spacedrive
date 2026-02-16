@@ -26,6 +26,11 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { useNavigate } from "react-router-dom";
 
+// macOS needs 52px top padding for traffic lights; Windows/Linux need minimal padding
+const isMacOS = typeof navigator !== 'undefined' &&
+  (navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac'));
+const SIDEBAR_TOP_PADDING = isMacOS ? 'pt-[52px]' : 'pt-3';
+
 // Wrapper that adds a space-level drop zone before each group and makes it sortable
 function SpaceGroupWithDropZone({
   group,
@@ -374,7 +379,7 @@ export function SpacesSidebar({ isPreviewActive = false }: SpacesSidebarProps) {
           isPreviewActive ? "backdrop-blur-2xl bg-sidebar/80" : "bg-sidebar/65",
         )}
       >
-        <nav className="relative z-[51] flex h-full flex-col gap-2.5 p-2.5 pb-2 pt-[52px]">
+        <nav className={clsx("relative z-[51] flex h-full flex-col gap-2.5 p-2.5 pb-2", SIDEBAR_TOP_PADDING)}>
           {/* Space Switcher */}
           <SpaceSwitcher
             spaces={spaces}

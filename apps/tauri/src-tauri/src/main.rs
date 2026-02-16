@@ -2004,16 +2004,6 @@ fn main() {
 				tracing::info!("Drag ended callback registered");
 			}
 
-			// Windows: Remove native decorations so frontend renders custom titlebar
-			#[cfg(target_os = "windows")]
-			{
-				if let Some(window) = app.get_webview_window("main") {
-					tracing::info!("Applying Windows window customizations...");
-					let _ = window.set_decorations(false);
-					tracing::info!("Windows decorations disabled (using custom titlebar)");
-				}
-			}
-
 			// Get data directory (use default Spacedrive location)
 			let data_dir =
 				sd_tauri_core::default_data_dir().expect("Failed to get default data directory");

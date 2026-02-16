@@ -15,6 +15,11 @@ import {
 import { DropdownMenu } from "@sd/ui";
 import { useSpacedriveClient } from "../../contexts/SpacedriveContext";
 import { useLibraries } from "../../hooks/useLibraries";
+
+// macOS needs 52px top padding for traffic lights; Windows/Linux need minimal padding
+const isMacOS = typeof navigator !== 'undefined' &&
+  (navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac'));
+const SIDEBAR_TOP_PADDING = isMacOS ? 'pt-[52px]' : 'pt-3';
 import { usePlatform } from "../../contexts/PlatformContext";
 import { LocationsSection } from "./components/LocationsSection";
 import { Section } from "./components/Section";
@@ -85,7 +90,7 @@ export function Sidebar() {
           "bg-sidebar/65",
         )}
       >
-        <nav className="relative z-[51] flex h-full flex-col gap-2.5 p-2.5 pb-2 pt-[52px]">
+        <nav className={clsx("relative z-[51] flex h-full flex-col gap-2.5 p-2.5 pb-2", SIDEBAR_TOP_PADDING)}>
           <DropdownMenu.Root
             trigger={
               <button

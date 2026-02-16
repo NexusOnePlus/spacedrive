@@ -83,9 +83,11 @@ impl LibraryQuery for ValidateLocationPathQuery {
 		tracing::info!("Validating path: {} (depth: {})", path.display(), depth);
 		tracing::info!("System directories: {:?}", system_dirs);
 		let is_system_dir = system_dirs.iter().any(|d| {
-			// Special case: "/" should only match if path IS "/", not if it starts with "/"
-			// Otherwise every absolute path would be considered a system directory
-			let matches = if d.to_string_lossy() == "/" {
+			// Drive roots (e.g. "/" or "C:\") should only match exact paths,
+			// not every path that starts with them
+			let d_str = d.to_string_lossy();
+			let is_drive_root = d_str == "/" || d_str.ends_with(":\\");
+			let matches = if is_drive_root {
 				path == d
 			} else {
 				path.starts_with(d)

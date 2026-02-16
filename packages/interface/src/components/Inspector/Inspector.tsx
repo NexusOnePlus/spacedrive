@@ -10,6 +10,11 @@ import {FileInspector} from './variants/FileInspector';
 import {LocationInspector} from './variants/LocationInspector';
 import {MultiFileInspector} from './variants/MultiFileInspector';
 
+// macOS needs 52px top space for traffic lights; Windows/Linux need minimal space
+const isMacOS = typeof navigator !== 'undefined' &&
+	(navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac'));
+const DRAG_REGION_HEIGHT = isMacOS ? 'h-[52px]' : 'h-3';
+
 // Re-export primitives for convenience
 export {InfoRow, Tag, Section, Divider, Tabs, TabContent} from './primitives';
 
@@ -97,11 +102,11 @@ function InspectorView({
 					: 'bg-sidebar/65'
 			)}
 		>
-			{/* Drag region for macOS traffic lights area */}
+			{/* Drag region for titlebar area */}
 			{!hideDragRegion && (
 				<div
 					data-tauri-drag-region
-					className="absolute inset-x-0 top-0 h-[52px] z-[60] pointer-events-none"
+					className={clsx("absolute inset-x-0 top-0 z-[60] pointer-events-none", DRAG_REGION_HEIGHT)}
 				/>
 			)}
 

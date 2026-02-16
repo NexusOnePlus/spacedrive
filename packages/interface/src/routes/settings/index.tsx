@@ -13,6 +13,12 @@ import {
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { usePlatform } from "../../contexts/PlatformContext";
 
+// macOS needs 52px top padding for traffic lights; Windows/Linux need minimal padding
+const isMacOS = typeof navigator !== 'undefined' &&
+  (navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac'));
+const TOP_PADDING = isMacOS ? 'pt-[52px]' : 'pt-3';
+const TOP_HEIGHT = isMacOS ? 'h-[52px]' : 'h-3';
+
 interface SettingsSidebarProps {
   currentPage: string;
   onPageChange: (page: string) => void;
@@ -93,15 +99,16 @@ function SettingsContentWrapper() {
       "h-screen flex transition-colors duration-500 relative",
       currentPage === "about" ? "bg-black" : "bg-app"
     )}>
-      {/* Drag region for macOS traffic lights area */}
+      {/* Drag region for titlebar area */}
       <div
         data-tauri-drag-region
-        className="absolute inset-x-0 top-0 h-[52px] z-50"
+        className={clsx("absolute inset-x-0 top-0 z-50", TOP_HEIGHT)}
       />
 
       {/* Sidebar */}
       <nav className={clsx(
-        "w-48 border-r p-4 pt-[52px] transition-all duration-500",
+        "w-48 border-r p-4 transition-all duration-500",
+        TOP_PADDING,
         currentPage === "about"
           ? "bg-black border-black"
           : "bg-sidebar border-sidebar-line"
@@ -119,7 +126,7 @@ function SettingsContentWrapper() {
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto p-8 pt-[52px]">
+      <main className={clsx("flex-1 overflow-auto p-8", TOP_PADDING)}>
         <SettingsContent page={currentPage} />
       </main>
     </div>
