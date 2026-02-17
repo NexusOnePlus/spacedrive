@@ -100,7 +100,7 @@ export const WindowControls = memo(function WindowControls() {
 			{/* Close */}
 			<button
 				onClick={handleClose}
-				className="flex items-center justify-center w-12 h-full transition-colors hover:bg-red-500 active:bg-red-600"
+				className="flex items-center justify-center w-12 h-full"
 				aria-label="Close"
 			>
 				<svg
