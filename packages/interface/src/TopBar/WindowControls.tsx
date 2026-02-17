@@ -42,7 +42,7 @@ export const WindowControls = memo(function WindowControls() {
 			{/* Minimize */}
 			<button
 				onClick={handleMinimize}
-				className="flex items-center justify-center w-12 h-full transition-colors hover:bg-white/10 active:bg-white/5"
+				className="flex items-center justify-center w-12 h-full"
 				aria-label="Minimize"
 			>
 				<svg width="10" height="1" viewBox="0 0 10 1">
@@ -58,7 +58,7 @@ export const WindowControls = memo(function WindowControls() {
 			{/* Maximize / Restore */}
 			<button
 				onClick={handleMaximize}
-				className="flex items-center justify-center w-12 h-full transition-colors hover:bg-white/10 active:bg-white/5"
+				className="flex items-center justify-center w-12 h-full"
 				aria-label={isMaximized ? "Restore" : "Maximize"}
 			>
 				{isMaximized ? (

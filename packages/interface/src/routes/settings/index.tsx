@@ -12,12 +12,15 @@ import {
 } from "../../Settings/pages";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { usePlatform } from "../../contexts/PlatformContext";
+import { WindowControls } from "../../TopBar/WindowControls";
 
-// macOS needs 52px top padding for traffic lights; Windows/Linux need minimal padding
 const isMacOS = typeof navigator !== 'undefined' &&
   (navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac'));
-const TOP_PADDING = isMacOS ? 'pt-[52px]' : 'pt-3';
-const TOP_HEIGHT = isMacOS ? 'h-[52px]' : 'h-3';
+const isWindows = typeof navigator !== 'undefined' &&
+  navigator.platform.toLowerCase().includes('win');
+// macOS: 52px for traffic lights; Windows: 36px for custom controls; Linux: minimal
+const TOP_PADDING = isMacOS ? 'pt-[52px]' : isWindows ? 'pt-[36px]' : 'pt-3';
+const TOP_HEIGHT = isMacOS ? 'h-[52px]' : isWindows ? 'h-[36px]' : 'h-3';
 
 interface SettingsSidebarProps {
   currentPage: string;
@@ -102,8 +105,10 @@ function SettingsContentWrapper() {
       {/* Drag region for titlebar area */}
       <div
         data-tauri-drag-region
-        className={clsx("absolute inset-x-0 top-0 z-50", TOP_HEIGHT)}
-      />
+        className={clsx("absolute inset-x-0 top-0 z-50 flex items-center", TOP_HEIGHT)}
+      >
+        {isWindows && <WindowControls />}
+      </div>
 
       {/* Sidebar */}
       <nav className={clsx(
