@@ -6,7 +6,7 @@
 use crate::infra::query::{QueryError, QueryResult};
 use crate::{
 	context::CoreContext,
-	domain::{addressing::SdPath, content_identity::ContentIdentity, file::File, tag::Tag},
+	domain::{addressing::SdPath, content_identity::{ContentIdentity, ContentKind}, file::File, tag::Tag},
 	infra::db::entities::{
 		content_identity, directory_paths, entry, sidecar, tag, user_metadata, user_metadata_tag,
 		video_media_data,
@@ -734,73 +734,194 @@ impl DirectoryListingQuery {
 		}
 
 		// No cached index or index doesn't cover this path
-		// Check if indexing is already in progress
-		if cache.is_indexing(&local_path) {
-			tracing::info!("Indexing already in progress for: {}", local_path.display());
-			// Return empty, UI will get updates via events
-			return Ok(DirectoryListingOutput {
-				files: Vec::new(),
-				total_count: 0,
-				has_more: false,
-			});
-		}
-
+		// Perform a direct filesystem read and return results immediately
 		tracing::info!(
-			"No cached index, triggering ephemeral indexing for: {:?}",
+			"No cached index, performing direct read_dir for: {:?}",
 			self.input.path
 		);
 
-		// Get library to dispatch indexer job
-		if let Some(library) = context.get_library(library_id).await {
-			// Create cache entry and get the index to share with the job
-			let ephemeral_index = cache.create_for_indexing(local_path.clone());
+		let include_hidden = self.input.include_hidden.unwrap_or(false);
+		let device_slug = match &self.input.path {
+			SdPath::Physical { device_slug, .. } => device_slug.clone(),
+			_ => String::new(),
+		};
+		let registry = context.file_type_registry();
 
-			// Clear any stale entries from previous indexing (prevents ghost files)
-			let cleared = cache.clear_for_reindex(&local_path).await;
-			if cleared > 0 {
-				tracing::debug!(
-					"Cleared {} stale entries for re-indexing: {}",
-					cleared,
-					local_path.display()
-				);
-			}
+		let mut files = Vec::new();
+		match std::fs::read_dir(&local_path) {
+			Ok(entries) => {
+				for entry_result in entries {
+					let entry = match entry_result {
+						Ok(e) => e,
+						Err(e) => {
+							tracing::debug!("Skipping unreadable entry: {}", e);
+							continue;
+						}
+					};
 
-			// Create ephemeral indexer job for this directory (shallow, current scope only)
-			let config = IndexerJobConfig::ephemeral_browse(
-				self.input.path.clone(),
-				IndexScope::Current, // Only current directory, not recursive
-				false,               // Directory browsing, not volume indexing
-			);
+					let metadata = match entry.metadata() {
+						Ok(m) => m,
+						Err(e) => {
+							tracing::debug!("Skipping entry with unreadable metadata: {}", e);
+							continue;
+						}
+					};
 
-			let mut indexer_job = IndexerJob::new(config);
+					let entry_path = entry.path();
+					let file_name = entry.file_name();
+					let name_str = file_name.to_string_lossy();
 
-			// Share the cached index with the job
-			indexer_job.set_ephemeral_index(ephemeral_index);
+					// Filter hidden files
+					if !include_hidden {
+						// Unix-style hidden (starts with .)
+						if name_str.starts_with('.') {
+							continue;
+						}
+						// Windows hidden attribute
+						#[cfg(windows)]
+						{
+							use std::os::windows::fs::MetadataExt;
+							const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+							if metadata.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0 {
+								continue;
+							}
+						}
+					}
 
-			// Dispatch job asynchronously
-			// The job will emit ResourceChanged events as files are discovered
-			match library.jobs().dispatch(indexer_job).await {
-				Ok(_) => {
-					tracing::info!("Dispatched ephemeral indexer for {:?}", self.input.path);
+					let kind = if metadata.is_dir() {
+						crate::domain::file::EntryKind::Directory
+					} else if metadata.file_type().is_symlink() {
+						crate::domain::file::EntryKind::Symlink
+					} else {
+						crate::domain::file::EntryKind::File
+					};
+
+					let (name, extension) = if kind == crate::domain::file::EntryKind::File {
+						let ext = entry_path
+							.extension()
+							.and_then(|e| e.to_str())
+							.map(|s| s.to_lowercase());
+						let stem = entry_path
+							.file_stem()
+							.and_then(|s| s.to_str())
+							.unwrap_or(&name_str)
+							.to_string();
+						(stem, ext)
+					} else {
+						(name_str.to_string(), None)
+					};
+
+					let content_kind = if kind == crate::domain::file::EntryKind::File {
+						registry.identify_by_extension(&entry_path)
+					} else {
+						ContentKind::Unknown
+					};
+
+					let created_at = metadata
+						.created()
+						.ok()
+						.and_then(|t| {
+							chrono::DateTime::from_timestamp(
+								t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
+								0,
+							)
+						})
+						.unwrap_or_else(chrono::Utc::now);
+
+					let modified_at = metadata
+						.modified()
+						.ok()
+						.and_then(|t| {
+							chrono::DateTime::from_timestamp(
+								t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
+								0,
+							)
+						})
+						.unwrap_or_else(chrono::Utc::now);
+
+					let accessed_at = metadata.accessed().ok().and_then(|t| {
+						chrono::DateTime::from_timestamp(
+							t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
+							0,
+						)
+					});
+
+					let entry_sd_path = SdPath::Physical {
+						device_slug: device_slug.clone(),
+						path: entry_path,
+					};
+					let is_local = entry_sd_path.is_local();
+
+					files.push(File {
+						id: Uuid::new_v4(),
+						sd_path: entry_sd_path,
+						name,
+						size: metadata.len(),
+						content_identity: None,
+						alternate_paths: Vec::new(),
+						tags: Vec::new(),
+						sidecars: Vec::new(),
+						image_media_data: None,
+						video_media_data: None,
+						audio_media_data: None,
+						created_at,
+						modified_at,
+						accessed_at,
+						content_kind,
+						extension,
+						kind,
+						is_local,
+						duration_seconds: None,
+					});
 				}
-				Err(e) => {
-					tracing::warn!(
-						"Failed to dispatch ephemeral indexer for {:?}: {}",
-						self.input.path,
-						e
-					);
-					// Mark indexing as not in progress since job failed
+			}
+			Err(e) => {
+				tracing::warn!("Failed to read directory {:?}: {}", local_path, e);
+				return Err(QueryError::Internal(format!(
+					"Failed to read directory: {}",
+					e
+				)));
+			}
+		}
+
+		// Sort the results
+		self.sort_files(&mut files);
+
+		// Apply limit
+		let total_count = files.len() as u32;
+		let has_more = if let Some(limit) = self.input.limit {
+			if files.len() > limit as usize {
+				files.truncate(limit as usize);
+				true
+			} else {
+				false
+			}
+		} else {
+			false
+		};
+
+		// Dispatch background indexer for metadata enrichment (thumbnails, content hashing, etc.)
+		if !cache.is_indexing(&local_path) {
+			if let Some(library) = context.get_library(library_id).await {
+				let ephemeral_index = cache.create_for_indexing(local_path.clone());
+				let config = IndexerJobConfig::ephemeral_browse(
+					self.input.path.clone(),
+					IndexScope::Current,
+					false,
+				);
+				let mut indexer_job = IndexerJob::new(config);
+				indexer_job.set_ephemeral_index(ephemeral_index);
+				if let Err(e) = library.jobs().dispatch(indexer_job).await {
+					tracing::debug!("Background ephemeral indexer dispatch failed: {}", e);
 					cache.mark_indexing_complete(&local_path);
 				}
 			}
 		}
 
-		// Return empty result immediately
-		// UI will receive ResourceChanged events and populate incrementally
 		Ok(DirectoryListingOutput {
-			files: Vec::new(),
-			total_count: 0,
-			has_more: false,
+			files,
+			total_count,
+			has_more,
 		})
 	}
 

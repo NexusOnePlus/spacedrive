@@ -213,8 +213,9 @@ impl DynJob for IndexerJob {
 	}
 
 	fn should_emit_events(&self) -> bool {
-		// Emit events for persistent jobs AND volume indexing jobs
-		if self.config.is_volume_indexing {
+		// Emit events for persistent jobs, volume indexing, AND ephemeral browsing
+		// Ephemeral jobs need events so the UI updates when files are discovered
+		if self.config.is_volume_indexing || self.config.is_ephemeral() {
 			return true;
 		}
 		self.should_persist()
