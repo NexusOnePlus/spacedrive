@@ -43,6 +43,7 @@ export interface ViewSettings {
 	showFileSize: boolean;
 	columnWidth: number;
 	foldersFirst: boolean;
+	showHidden: boolean;
 	sizeViewItemLimit: number;
 }
 
@@ -206,6 +207,7 @@ const defaultViewSettings: ViewSettings = {
 	showFileSize: true,
 	columnWidth: 256,
 	foldersFirst: false,
+	showHidden: false,
 	sizeViewItemLimit: 500,
 };
 
@@ -632,6 +634,7 @@ export function ExplorerProvider({
 			gapSize: tabState.gapSize,
 			foldersFirst: tabState.foldersFirst,
 			showFileSize: uiState.viewSettings.showFileSize,
+			showHidden: uiState.viewSettings.showHidden,
 			columnWidth: uiState.viewSettings.columnWidth,
 			sizeViewItemLimit: uiState.viewSettings.sizeViewItemLimit,
 		}),
@@ -641,6 +644,7 @@ export function ExplorerProvider({
 			tabState.gapSize,
 			tabState.foldersFirst,
 			uiState.viewSettings.showFileSize,
+			uiState.viewSettings.showHidden,
 			uiState.viewSettings.columnWidth,
 			uiState.viewSettings.sizeViewItemLimit,
 		],
@@ -675,8 +679,8 @@ export function ExplorerProvider({
 				foldersFirst: settings.foldersFirst ?? tabState.foldersFirst,
 			});
 
-			// Update UI state for global settings (showFileSize, sizeViewItemLimit)
-			if (settings.showFileSize !== undefined || settings.sizeViewItemLimit !== undefined) {
+			// Update UI state for global settings (showFileSize, sizeViewItemLimit, showHidden)
+			if (settings.showFileSize !== undefined || settings.sizeViewItemLimit !== undefined || settings.showHidden !== undefined) {
 				uiDispatch({
 					type: "SET_VIEW_SETTINGS",
 					settings,

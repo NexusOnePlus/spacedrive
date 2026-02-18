@@ -219,6 +219,7 @@ impl VolumeBackend for LocalBackend {
 				kind,
 				size: metadata.len(),
 				modified: metadata.modified().ok(),
+				created: metadata.created().ok(),
 				inode: Self::get_inode(&entry_path, &metadata),
 			});
 		}

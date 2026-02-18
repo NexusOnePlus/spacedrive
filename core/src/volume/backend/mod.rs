@@ -133,6 +133,7 @@ pub struct RawDirEntry {
 	pub kind: EntryKind,
 	pub size: u64,
 	pub modified: Option<SystemTime>,
+	pub created: Option<SystemTime>,
 	pub inode: Option<u64>,
 }
 

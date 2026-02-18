@@ -136,7 +136,7 @@ export const Column = memo(function Column({
 		input: {
 			path: path!,
 			limit: null,
-			include_hidden: false,
+			include_hidden: viewSettings.showHidden,
 			sort_by: sortBy as any,
 			folders_first: viewSettings.foldersFirst,
 		},

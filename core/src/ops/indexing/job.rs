@@ -869,6 +869,7 @@ impl IndexerJob {
 				kind: entry_kind,
 				size: metadata.len(),
 				modified: metadata.modified().ok(),
+				created: metadata.created().ok(),
 				inode: DatabaseStorage::get_inode(&path, &metadata),
 			};
 
@@ -956,7 +957,7 @@ impl IndexerJob {
 						size: entry.size,
 						modified: entry.modified,
 						accessed: None,
-						created: None,
+						created: entry.created,
 						inode: entry.inode,
 						permissions: None,
 						is_hidden: entry
@@ -1044,7 +1045,16 @@ impl IndexerJob {
 							image_media_data: None,
 							video_media_data: None,
 							audio_media_data: None,
-							created_at: Utc::now(),
+							created_at: entry
+								.created
+								.and_then(|t| {
+									DateTime::from_timestamp(
+										t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs()
+											as i64,
+										0,
+									)
+								})
+								.unwrap_or_else(Utc::now),
 							modified_at: entry
 								.modified
 								.and_then(|t| {

@@ -53,6 +53,30 @@ use sea_orm::{
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+/// Check if a path is hidden by name only (dotfile check).
+pub fn is_name_hidden(path: &Path) -> bool {
+	path.file_name()
+		.and_then(|n| n.to_str())
+		.map(|n| n.starts_with('.'))
+		.unwrap_or(false)
+}
+
+/// Check if a file is hidden, including Windows FILE_ATTRIBUTE_HIDDEN.
+pub fn is_file_hidden(path: &Path, metadata: Option<&std::fs::Metadata>) -> bool {
+	if is_name_hidden(path) {
+		return true;
+	}
+	#[cfg(windows)]
+	if let Some(meta) = metadata {
+		use std::os::windows::fs::MetadataExt;
+		const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+		if meta.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0 {
+			return true;
+		}
+	}
+	false
+}
+
 /// Normalizes cloud storage paths to match PathBuf::parent() semantics.
 ///
 /// Cloud backends (S3, Dropbox) store directory paths with trailing slashes
@@ -101,7 +125,7 @@ impl From<DirEntry> for EntryMetadata {
 			size: entry.size,
 			modified: entry.modified,
 			accessed: None,
-			created: None,
+			created: entry.created,
 			inode: entry.inode,
 			permissions: None,
 			is_hidden: entry
@@ -392,6 +416,16 @@ impl DatabaseStorage {
 			})
 			.unwrap_or_else(|| chrono::Utc::now());
 
+		let created_at = entry
+			.created
+			.and_then(|t| {
+				chrono::DateTime::from_timestamp(
+					t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
+					0,
+				)
+			})
+			.unwrap_or_else(|| chrono::Utc::now());
+
 		// UUID assignment: preserve ephemeral UUIDs from prior browsing sessions
 		// so user metadata (tags, notes) survives the transition to persistent indexing.
 		let entry_uuid = if let Some(ephemeral_uuid) = state.get_ephemeral_uuid(&entry.path) {
@@ -431,7 +465,7 @@ impl DatabaseStorage {
 			aggregate_size: Set(0),
 			child_count: Set(0),
 			file_count: Set(0),
-			created_at: Set(now),
+			created_at: Set(created_at),
 			modified_at: Set(modified_at),
 			accessed_at: Set(None),
 			indexed_at: Set(Some(now)),

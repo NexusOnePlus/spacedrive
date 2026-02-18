@@ -592,6 +592,7 @@ pub async fn run_processing_phase(
 					kind,
 					size: metadata.len(),
 					modified: metadata.modified().ok(),
+					created: metadata.created().ok(),
 					inode,
 				};
 

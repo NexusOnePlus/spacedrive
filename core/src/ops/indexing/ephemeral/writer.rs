@@ -305,11 +305,7 @@ impl ChangeHandler for MemoryAdapter {
 					created: metadata.created().ok(),
 					inode: DatabaseStorage::get_inode(&entry_path, &metadata),
 					permissions: None,
-					is_hidden: entry_path
-						.file_name()
-						.and_then(|n| n.to_str())
-						.map(|n| n.starts_with('.'))
-						.unwrap_or(false),
+					is_hidden: crate::ops::indexing::database_storage::is_file_hidden(&entry_path, Some(&metadata)),
 				};
 
 				let uuid = Uuid::new_v4();
@@ -429,6 +425,7 @@ mod tests {
 			kind: EntryKind::File,
 			size: 12,
 			modified: Some(std::time::SystemTime::now()),
+			created: Some(std::time::SystemTime::now()),
 			inode: Some(12345),
 		};
 
@@ -466,6 +463,7 @@ mod tests {
 			kind: EntryKind::File,
 			size: 12,
 			modified: Some(std::time::SystemTime::now()),
+			created: Some(std::time::SystemTime::now()),
 			inode: Some(12345),
 		};
 
@@ -501,6 +499,7 @@ mod tests {
 			kind: EntryKind::File,
 			size: 12,
 			modified: Some(std::time::SystemTime::now()),
+			created: Some(std::time::SystemTime::now()),
 			inode: Some(12345),
 		};
 

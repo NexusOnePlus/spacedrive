@@ -1299,11 +1299,21 @@ WantedBy=default.target
 		tracing::info!("Added daemon to HKCU\\Run for auto-start");
 
 		// Start daemon as a detached process immediately
-		let child = std::process::Command::new(&daemon_path)
-			.args(&["--data-dir", &data_dir.to_string_lossy()])
+		let mut cmd = std::process::Command::new(&daemon_path);
+		cmd.args(&["--data-dir", &data_dir.to_string_lossy()])
 			.stdin(std::process::Stdio::null())
 			.stdout(std::process::Stdio::null())
-			.stderr(std::process::Stdio::null())
+			.stderr(std::process::Stdio::null());
+
+		// Hide the console window on Windows release builds
+		#[cfg(target_os = "windows")]
+		{
+			use std::os::windows::process::CommandExt;
+			const CREATE_NO_WINDOW: u32 = 0x08000000;
+			cmd.creation_flags(CREATE_NO_WINDOW);
+		}
+
+		let child = cmd
 			.spawn()
 			.map_err(|e| format!("Failed to start daemon: {}", e))?;
 
@@ -1543,11 +1553,21 @@ async fn start_daemon(
 
 	tracing::info!("Starting daemon from: {:?}", daemon_path);
 
-	let child = std::process::Command::new(daemon_path)
-		.arg("--data-dir")
+	let mut cmd = std::process::Command::new(daemon_path);
+	cmd.arg("--data-dir")
 		.arg(data_dir)
 		.stdout(std::process::Stdio::null())
-		.stderr(std::process::Stdio::null())
+		.stderr(std::process::Stdio::null());
+
+	// Hide the console window on Windows release builds
+	#[cfg(target_os = "windows")]
+	{
+		use std::os::windows::process::CommandExt;
+		const CREATE_NO_WINDOW: u32 = 0x08000000;
+		cmd.creation_flags(CREATE_NO_WINDOW);
+	}
+
+	let child = cmd
 		.spawn()
 		.map_err(|e| format!("Failed to start daemon: {}", e))?;
 

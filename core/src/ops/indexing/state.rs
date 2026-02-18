@@ -81,6 +81,8 @@ pub struct DirEntry {
 	pub kind: EntryKind,
 	pub size: u64,
 	pub modified: Option<std::time::SystemTime>,
+	#[serde(default)]
+	pub created: Option<std::time::SystemTime>,
 	pub inode: Option<u64>,
 }
 

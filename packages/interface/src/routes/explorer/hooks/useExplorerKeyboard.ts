@@ -47,7 +47,7 @@ export function useExplorerKeyboard() {
 			? {
 					path: currentPath,
 					limit: null,
-					include_hidden: false,
+					include_hidden: viewSettings.showHidden,
 					sort_by: sortBy as DirectorySortBy,
 				}
 			: null!,
