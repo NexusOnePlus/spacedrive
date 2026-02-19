@@ -151,8 +151,24 @@ impl LibraryQuery for DirectoryListingQuery {
 			Ok(parent_entry) => {
 				// Path is indexed - query from database
 				let parent_id = parent_entry.id;
-				self.query_indexed_directory_impl(parent_id, db.conn())
-					.await
+				let result = self.query_indexed_directory_impl(parent_id, db.conn())
+					.await?;
+
+				// Fallback: if indexed query returns 0 results but directory exists on disk,
+				// use ephemeral browsing (handles stale/incomplete index data)
+				if result.files.is_empty() {
+					if let SdPath::Physical { path, .. } = &self.input.path {
+						if path.is_dir() {
+							tracing::info!(
+								"Indexed query returned 0 results for existing directory, falling back to ephemeral: {:?}",
+								path
+							);
+							return self.query_ephemeral_directory_impl(context, library_id).await;
+						}
+					}
+				}
+
+				Ok(result)
 			}
 			Err(_) => {
 				// Path not indexed - trigger ephemeral indexing and return empty

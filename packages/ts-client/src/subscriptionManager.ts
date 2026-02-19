@@ -35,6 +35,7 @@ interface SubscriptionEntry {
 export class SubscriptionManager {
 	private subscriptions = new Map<string, SubscriptionEntry>();
 	private pendingSubscriptions = new Map<string, Promise<SubscriptionEntry>>();
+	private cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private transport: Transport;
 
 	constructor(transport: Transport) {
@@ -69,6 +70,12 @@ export class SubscriptionManager {
 		// Check if subscription already exists
 		let entry = this.subscriptions.get(key);
 		if (entry) {
+			// Cancel any pending cleanup timer (a new subscriber is joining)
+			const existingTimer = this.cleanupTimers.get(key);
+			if (existingTimer) {
+				clearTimeout(existingTimer);
+				this.cleanupTimers.delete(key);
+			}
 			console.log(`[SubscriptionManager] Reusing existing subscription for key: ${key}, refCount: ${entry.refCount} -> ${entry.refCount + 1}`);
 			entry.listeners.add(callback);
 			entry.refCount++;
@@ -149,7 +156,6 @@ export class SubscriptionManager {
 		return () => {
 			const currentEntry = this.subscriptions.get(key);
 			if (!currentEntry) {
-				console.log(`[SubscriptionManager] Cleanup called but entry not found for key: ${key}`);
 				return;
 			}
 
@@ -158,9 +164,20 @@ export class SubscriptionManager {
 			console.log(`[SubscriptionManager] Cleanup called for key: ${key}, refCount: ${currentEntry.refCount + 1} -> ${currentEntry.refCount}`);
 
 			if (currentEntry.refCount === 0) {
-				console.log(`[SubscriptionManager] RefCount reached 0, unsubscribing from key: ${key}`);
-				currentEntry.unsubscribe();
-				this.subscriptions.delete(key);
+				// Debounce the actual unsubscription to handle rapid mount/unmount cycles
+				// (e.g., React re-renders, navigation between directories)
+				// If a new subscriber joins within 500ms, the cleanup timer is cancelled
+				const timer = setTimeout(() => {
+					this.cleanupTimers.delete(key);
+					// Re-check refCount in case a new subscriber joined during the debounce
+					const entry = this.subscriptions.get(key);
+					if (entry && entry.refCount === 0) {
+						console.log(`[SubscriptionManager] RefCount still 0 after debounce, unsubscribing from key: ${key}`);
+						entry.unsubscribe();
+						this.subscriptions.delete(key);
+					}
+				}, 500);
+				this.cleanupTimers.set(key, timer);
 			}
 		};
 	}
@@ -188,6 +205,9 @@ export class SubscriptionManager {
 		console.log(
 			`[SubscriptionManager] Destroying ${this.subscriptions.size} subscriptions`,
 		);
+		// Clear all debounce timers
+		this.cleanupTimers.forEach((timer) => clearTimeout(timer));
+		this.cleanupTimers.clear();
 		this.subscriptions.forEach((entry) => entry.unsubscribe());
 		this.subscriptions.clear();
 	}

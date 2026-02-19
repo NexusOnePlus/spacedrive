@@ -405,8 +405,8 @@ export function filterBatchResources(
 				return false; // No Physical scope path
 			}
 
-			// Normalize scope: remove trailing slashes for consistent comparison
-			const normalizedScope = String(scopeStr).replace(/\/+$/, "");
+			// Normalize scope: remove trailing slashes/backslashes for consistent comparison
+			const normalizedScope = String(scopeStr).replace(/[/\\]+$/, "");
 
 			// Try to find a Physical path - check alternate_paths first, then sd_path
 			const alternatePaths = resource.alternate_paths || [];
@@ -424,16 +424,18 @@ export function filterBatchResources(
 
 			const pathStr = String(physicalPath.path);
 
-			// Extract parent directory from file path
-			const lastSlash = pathStr.lastIndexOf("/");
+			// Extract parent directory from file path (handle both / and \ separators)
+			const lastForwardSlash = pathStr.lastIndexOf("/");
+			const lastBackSlash = pathStr.lastIndexOf("\\");
+			const lastSlash = Math.max(lastForwardSlash, lastBackSlash);
 			if (lastSlash === -1) {
 				return false; // File path has no parent directory
 			}
 
 			const parentDir = pathStr.substring(0, lastSlash);
 
-			// Only match if parent equals scope (normalized)
-			return parentDir === normalizedScope;
+			// Only match if parent equals scope (normalized, case-insensitive for Windows)
+			return parentDir.toLowerCase() === normalizedScope.toLowerCase();
 		});
 	}
 

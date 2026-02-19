@@ -458,7 +458,17 @@ export function ExplorerProvider({
 	);
 	const [uiState, uiDispatch] = useReducer(uiReducer, initialUIState);
 	const [currentFiles, setCurrentFiles] = useReducer(
-		(_: File[], files: File[]) => files,
+		(prev: File[], next: File[]) => {
+			// Prevent infinite re-renders: skip update if files haven't actually changed
+			if (prev === next) return prev;
+			if (prev.length === 0 && next.length === 0) return prev;
+			if (
+				prev.length === next.length &&
+				prev.every((f, i) => f.id === next[i]?.id)
+			)
+				return prev;
+			return next;
+		},
 		[] as File[],
 	);
 

@@ -200,10 +200,14 @@ export function ColumnView() {
 	});
 
 	// Use virtual files if we're in the virtual column, otherwise use query data
-	const activeColumnFiles =
-		isVirtualView && activeColumnIndex === -1
-			? virtualFiles || []
-			: ((activeColumnQuery.data as any)?.files || []);
+	// useMemo prevents new array references on every render (avoids infinite re-render loop)
+	const activeColumnFiles = useMemo(
+		() =>
+			isVirtualView && activeColumnIndex === -1
+				? virtualFiles || []
+				: (activeColumnQuery.data as any)?.files || [],
+		[isVirtualView, activeColumnIndex, virtualFiles, activeColumnQuery.data],
+	);
 
 	// Update currentFiles when active column changes (required for QuickPreview)
 	useEffect(() => {
@@ -249,7 +253,10 @@ export function ColumnView() {
 		pathScope: nextColumnPath,
 	});
 
-	const nextColumnFiles = (nextColumnQuery.data as any)?.files || [];
+	const nextColumnFiles = useMemo(
+		() => (nextColumnQuery.data as any)?.files || [],
+		[nextColumnQuery.data],
+	);
 
 	// Keyboard navigation
 	useEffect(() => {

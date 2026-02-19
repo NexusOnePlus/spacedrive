@@ -1,4 +1,4 @@
-import { useRef, memo, useCallback } from "react";
+import { useRef, memo, useCallback, useMemo } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import clsx from "clsx";
 import type { File, SdPath } from "@sd/ts-client";
@@ -146,7 +146,10 @@ export const Column = memo(function Column({
 		// includeDescendants defaults to false for exact directory matching
 	});
 
-	const files = virtualFiles || (directoryQuery.data as any)?.files || [];
+	const files = useMemo(
+		() => virtualFiles || (directoryQuery.data as any)?.files || [],
+		[virtualFiles, directoryQuery.data],
+	);
 
 	const rowVirtualizer = useVirtualizer({
 		count: files.length,
