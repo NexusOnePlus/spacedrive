@@ -20,8 +20,10 @@ import {
 	FolderPlus,
 	ArrowSquareOut,
 	ShareNetwork,
+	PushPin,
 } from "@phosphor-icons/react";
 import type { File } from "@sd/ts-client";
+import { useSidebarStore } from "@sd/ts-client";
 import { useContextMenu } from "../../../hooks/useContextMenu";
 import { useJobDispatch } from "../../../hooks/useJobDispatch";
 import { useLibraryMutation } from "../../../contexts/SpacedriveContext";
@@ -33,6 +35,7 @@ import { useClipboard } from "../../../hooks/useClipboard";
 import { useFileOperationDialog } from "../../../components/modals/FileOperationModal";
 import { useSelection } from "../SelectionContext";
 import { useOpenWith } from "../../../hooks/useOpenWith";
+import { useSpaces } from "../../../components/SpacesSidebar/hooks/useSpaces";
 
 interface UseFileContextMenuProps {
 	file?: File | null;
@@ -50,10 +53,13 @@ export function useFileContextMenu({
 	const copyFiles = useLibraryMutation("files.copy");
 	const deleteFiles = useLibraryMutation("files.delete");
 	const createFolder = useLibraryMutation("files.createFolder");
+	const addToSpace = useLibraryMutation("spaces.add_item");
 	const { runJob } = useJobDispatch();
 	const clipboard = useClipboard();
 	const openFileOperation = useFileOperationDialog();
 	const { startRename } = useSelection();
+	const { currentSpaceId } = useSidebarStore();
+	const { data: spacesData } = useSpaces();
 
 	// Get physical paths for file opening
 	const getPhysicalPaths = () => {
@@ -183,6 +189,32 @@ export function useFileContextMenu({
 					}
 				},
 				condition: () => physicalPaths.length > 0 && !!platform.shareFiles,
+			},
+			{
+				icon: PushPin,
+				label: "Pin to Sidebar",
+				onClick: async () => {
+					if (!file) return;
+					const spaces = spacesData?.spaces;
+					const currentSpace =
+						spaces?.find((s: any) => s.id === currentSpaceId) ??
+						spaces?.[0];
+					if (!currentSpace) {
+						console.warn("No space available to pin to");
+						return;
+					}
+					try {
+						await addToSpace.mutateAsync({
+							space_id: currentSpace.id,
+							group_id: null,
+							item_type: { Path: { sd_path: file.sd_path } },
+						});
+						console.log("Pinned to sidebar:", file.name);
+					} catch (err) {
+						console.error("Failed to pin to sidebar:", err);
+					}
+				},
+				condition: () => !!file && file.kind === "Directory",
 			},
 			{ type: "separator" },
 			{

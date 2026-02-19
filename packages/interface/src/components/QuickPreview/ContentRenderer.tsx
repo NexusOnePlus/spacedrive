@@ -547,6 +547,47 @@ function DocumentRenderer({ file }: ContentRendererProps) {
 	);
 }
 
+function PdfRenderer({ file }: ContentRendererProps) {
+	const platform = usePlatform();
+	const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+
+	const pdfFileId = file.content_identity?.uuid || file.id;
+
+	useEffect(() => {
+		setPdfUrl(null);
+		if (!platform.convertFileSrc) return;
+
+		const sdPath = file.sd_path as any;
+		const physicalPath = sdPath?.Physical?.path;
+		if (!physicalPath) return;
+
+		setPdfUrl(platform.convertFileSrc(physicalPath));
+	}, [pdfFileId, file.sd_path, platform]);
+
+	if (!pdfUrl) {
+		return (
+			<div className="w-full h-full flex items-center justify-center">
+				<div className="text-center">
+					<FileComponent.Thumb file={file} size={200} />
+					<div className="mt-4 text-ink text-lg font-medium">
+						{file.name}
+					</div>
+					<div className="text-ink-dull text-sm mt-2">Loading PDF...</div>
+				</div>
+			</div>
+		);
+	}
+
+	return (
+		<iframe
+			src={pdfUrl}
+			title={file.name}
+			className="w-full h-full border-0 bg-white"
+			style={{ minHeight: "100%" }}
+		/>
+	);
+}
+
 function TextRenderer({ file }: ContentRendererProps) {
 	const platform = usePlatform();
 	const [textUrl, setTextUrl] = useState<string | null>(null);
@@ -677,6 +718,11 @@ export function ContentRenderer({
 				</Suspense>
 			);
 		case "document":
+			// Use PDF renderer for PDF files, generic document view for others
+			if (file.extension?.toLowerCase() === "pdf") {
+				return <PdfRenderer file={file} />;
+			}
+			return <DocumentRenderer file={file} />;
 		case "book":
 		case "spreadsheet":
 		case "presentation":
