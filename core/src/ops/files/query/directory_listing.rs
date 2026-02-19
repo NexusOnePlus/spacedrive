@@ -868,8 +868,12 @@ impl DirectoryListingQuery {
 					};
 					let is_local = entry_sd_path.is_local();
 
+					// Deterministic UUID from path so the same file always has the same ID
+					let path_str = format!("{:?}", entry_sd_path);
+					let id = Uuid::new_v5(&Uuid::NAMESPACE_URL, path_str.as_bytes());
+
 					files.push(File {
-						id: Uuid::new_v4(),
+						id,
 						sd_path: entry_sd_path,
 						name,
 						size: metadata.len(),

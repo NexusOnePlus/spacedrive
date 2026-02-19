@@ -12,6 +12,7 @@ import {
 import { TopBarPortal, TopBarItem } from "../../TopBar";
 import { getContentKind } from "@sd/ts-client";
 import { useExplorer } from "../../routes/explorer/context";
+import { useNormalizedQuery } from "../../contexts/SpacedriveContext";
 
 interface QuickPreviewFullscreenProps {
 	fileId: string;
@@ -52,15 +53,22 @@ export function QuickPreviewFullscreen({
 		setIsZoomed(false);
 	}, [fileId]);
 
-	// Get file directly from currentFiles - instant, no network request
-	const file = useMemo(
+	// Try to get file from currentFiles first (instant, no network request)
+	const fileFromContext = useMemo(
 		() => currentFiles.find((f) => f.id === fileId) ?? null,
 		[currentFiles, fileId],
 	);
 
-	// No query needed - files are already loaded by the explorer views
-	const isLoading = false;
-	const error = null;
+	// Fallback: query by ID when file not in currentFiles (e.g., Column View active column mismatch)
+	const { data: fileFromQuery, isLoading, error } = useNormalizedQuery<{ file_id: string }, File>({
+		query: 'files.by_id',
+		input: { file_id: fileId },
+		resourceType: 'file',
+		resourceId: fileId,
+		enabled: !!fileId && isOpen && !fileFromContext,
+	});
+
+	const file = fileFromContext ?? fileFromQuery ?? null;
 
 	// Find portal target on mount
 	useEffect(() => {
