@@ -1,21 +1,23 @@
-import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { X, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
-import { useEffect, useState, useMemo } from "react";
-import type { File } from "@sd/ts-client";
-import { ContentRenderer } from "./ContentRenderer";
+import {ArrowLeft, ArrowRight, X} from '@phosphor-icons/react';
+import type {File} from '@sd/ts-client';
+import {getContentKind} from '@sd/ts-client';
+import {AnimatePresence, motion} from 'framer-motion';
+import {useEffect, useMemo, useState} from 'react';
+import {createPortal} from 'react-dom';
+import {useNormalizedQuery} from '../../contexts/SpacedriveContext';
+import {useExplorer} from '../../routes/explorer/context';
+import {TopBarItem, TopBarPortal} from '../../TopBar';
+import {ContentRenderer} from './ContentRenderer';
 import {
 	VideoControls,
-	type VideoControlsState,
 	type VideoControlsCallbacks,
-} from "./VideoControls";
-import { TopBarPortal, TopBarItem } from "../../TopBar";
-import { getContentKind } from "@sd/ts-client";
-import { useExplorer } from "../../routes/explorer/context";
-import { useNormalizedQuery } from "../../contexts/SpacedriveContext";
+	type VideoControlsState
+} from './VideoControls';
 
 interface QuickPreviewFullscreenProps {
 	fileId: string;
+	/** Pre-resolved file object (useful for ephemeral files not in database) */
+	file?: File | null;
 	isOpen: boolean;
 	onClose: () => void;
 	onNext?: () => void;
@@ -26,10 +28,11 @@ interface QuickPreviewFullscreenProps {
 	inspectorWidth?: number;
 }
 
-const PREVIEW_LAYER_ID = "quick-preview-layer";
+const PREVIEW_LAYER_ID = 'quick-preview-layer';
 
 export function QuickPreviewFullscreen({
 	fileId,
+	file: providedFile,
 	isOpen,
 	onClose,
 	onNext,
@@ -37,7 +40,7 @@ export function QuickPreviewFullscreen({
 	hasPrevious,
 	hasNext,
 	sidebarWidth = 0,
-	inspectorWidth = 0,
+	inspectorWidth = 0
 }: QuickPreviewFullscreenProps) {
 	const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 	const [isZoomed, setIsZoomed] = useState(false);
@@ -46,29 +49,39 @@ export function QuickPreviewFullscreen({
 	const [showVideoControls, setShowVideoControls] = useState(false);
 	const [videoCallbacks, setVideoCallbacks] =
 		useState<VideoControlsCallbacks | null>(null);
-	const { currentFiles } = useExplorer();
+	const {currentFiles} = useExplorer();
 
 	// Reset zoom when file changes
 	useEffect(() => {
 		setIsZoomed(false);
 	}, [fileId]);
 
-	// Try to get file from currentFiles first (instant, no network request)
+	// Try to get file in this order:
+	// 1. Provided file prop (from selection, works for ephemeral)
+	// 2. currentFiles (instant, no network request)
+	// 3. Query by ID (fallback for indexed files)
 	const fileFromContext = useMemo(
 		() => currentFiles.find((f) => f.id === fileId) ?? null,
-		[currentFiles, fileId],
+		[currentFiles, fileId]
 	);
 
-	// Fallback: query by ID when file not in currentFiles (e.g., Column View active column mismatch)
-	const { data: fileFromQuery, isLoading, error } = useNormalizedQuery<{ file_id: string }, File>({
+	// Only query if we don't have the file from any source
+	const needsQuery = !!fileId && isOpen && !providedFile && !fileFromContext;
+
+	const {
+		data: fileFromQuery,
+		isLoading,
+		error
+	} = useNormalizedQuery<{file_id: string}, File>({
 		query: 'files.by_id',
-		input: { file_id: fileId },
+		input: {file_id: fileId},
 		resourceType: 'file',
 		resourceId: fileId,
-		enabled: !!fileId && isOpen && !fileFromContext,
+		enabled: needsQuery
 	});
 
-	const file = fileFromContext ?? fileFromQuery ?? null;
+	// Use provided file first, then context, then query
+	const file = providedFile ?? fileFromContext ?? fileFromQuery ?? null;
 
 	// Find portal target on mount
 	useEffect(() => {
@@ -81,33 +94,33 @@ export function QuickPreviewFullscreen({
 
 		const handleKeyDown = (e: KeyboardEvent) => {
 			// Only handle close events - let Explorer handle navigation
-			if (e.code === "Escape" || e.code === "Space") {
+			if (e.code === 'Escape' || e.code === 'Space') {
 				e.preventDefault();
 				e.stopImmediatePropagation();
 				onClose();
 			}
 		};
 
-		window.addEventListener("keydown", handleKeyDown, { capture: true });
+		window.addEventListener('keydown', handleKeyDown, {capture: true});
 		return () =>
-			window.removeEventListener("keydown", handleKeyDown, {
-				capture: true,
+			window.removeEventListener('keydown', handleKeyDown, {
+				capture: true
 			});
 	}, [isOpen, onClose]);
 
 	// Get background style based on content type
 	const getBackgroundClass = () => {
-		if (!file) return "bg-black/90";
+		if (!file) return 'bg-black/90';
 
 		switch (getContentKind(file)) {
-			case "video":
-				return "bg-black";
-			case "audio":
-				return "audio-gradient";
-			case "image":
-				return "bg-black/95";
+			case 'video':
+				return 'bg-black';
+			case 'audio':
+				return 'audio-gradient';
+			case 'image':
+				return 'bg-black/95';
 			default:
-				return "bg-black/90";
+				return 'bg-black/90';
 		}
 	};
 
@@ -129,7 +142,7 @@ export function QuickPreviewFullscreen({
 				>
 					<ArrowRight size={16} weight="bold" />
 				</button>
-				<div className="h-4 w-px bg-white/20 mx-1" />
+				<div className="mx-1 h-4 w-px bg-white/20" />
 			</div>
 		),
 		[onPrevious, onNext, hasPrevious, hasNext]
@@ -163,14 +176,14 @@ export function QuickPreviewFullscreen({
 			{isOpen && (
 				<motion.div
 					key="fullscreen-preview"
-					initial={{ opacity: 0 }}
-					animate={{ opacity: 1 }}
-					exit={{ opacity: 0 }}
-					transition={{ duration: 0.2 }}
+					initial={{opacity: 0}}
+					animate={{opacity: 1}}
+					exit={{opacity: 0}}
+					transition={{duration: 0.2}}
 					className={`absolute inset-0 flex flex-col ${getBackgroundClass()}`}
 				>
 					{!file && isLoading ? (
-						<div className="flex h-full items-center justify-center text-ink">
+						<div className="text-ink flex h-full items-center justify-center">
 							<div className="animate-pulse">Loading...</div>
 						</div>
 					) : !file && error ? (
@@ -183,7 +196,7 @@ export function QuickPreviewFullscreen({
 							</div>
 						</div>
 					) : !file ? (
-						<div className="flex h-full items-center justify-center text-ink-dull">
+						<div className="text-ink-dull flex h-full items-center justify-center">
 							<div>File not found</div>
 						</div>
 					) : (
@@ -226,11 +239,11 @@ export function QuickPreviewFullscreen({
 
 							{/* Content Area - padded to fit between sidebar/inspector, expands on zoom */}
 							<div
-								className={`flex-1 pt-14 pb-10 ${isZoomed ? "overflow-visible" : "overflow-hidden"}`}
+								className={`flex-1 pb-10 pt-14 ${isZoomed ? 'overflow-visible' : 'overflow-hidden'}`}
 								style={{
 									paddingLeft: isZoomed ? 0 : sidebarWidth,
 									paddingRight: isZoomed ? 0 : inspectorWidth,
-									transition: "padding 0.3s ease-out",
+									transition: 'padding 0.3s ease-out'
 								}}
 							>
 								<ContentRenderer
@@ -249,13 +262,13 @@ export function QuickPreviewFullscreen({
 							{/* Video Controls Overlay - fixed position, always uses sidebar/inspector padding */}
 							{videoControlsState &&
 								videoCallbacks &&
-								getContentKind(file) === "video" && (
+								getContentKind(file) === 'video' && (
 									<div
 										className="absolute inset-0"
 										style={{
-											paddingTop: "56px", // TopBar height
-											paddingBottom: "40px", // Footer height
-											pointerEvents: "none", // Let clicks through except on controls themselves
+											paddingTop: '56px', // TopBar height
+											paddingBottom: '40px', // Footer height
+											pointerEvents: 'none' // Let clicks through except on controls themselves
 										}}
 									>
 										<VideoControls
@@ -272,20 +285,20 @@ export function QuickPreviewFullscreen({
 							{/* Footer with keyboard hints */}
 							<div className="absolute bottom-0 left-0 right-0 z-10 px-6 py-3">
 								<div className="text-center text-xs text-white/50">
-									<span className="text-white/70">ESC</span>{" "}
-									or{" "}
-									<span className="text-white/70">Space</span>{" "}
+									<span className="text-white/70">ESC</span>{' '}
+									or{' '}
+									<span className="text-white/70">Space</span>{' '}
 									to close
 									{(hasPrevious || hasNext) && (
 										<>
-											{" · "}
+											{' · '}
 											<span className="text-white/70">
 												←
-											</span>{" "}
-											/{" "}
+											</span>{' '}
+											/{' '}
 											<span className="text-white/70">
 												→
-											</span>{" "}
+											</span>{' '}
 											to navigate
 										</>
 									)}
@@ -301,4 +314,4 @@ export function QuickPreviewFullscreen({
 	return createPortal(content, portalTarget);
 }
 
-export { PREVIEW_LAYER_ID };
+export {PREVIEW_LAYER_ID};

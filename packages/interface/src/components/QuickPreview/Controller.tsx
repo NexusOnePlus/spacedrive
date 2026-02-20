@@ -1,7 +1,8 @@
-import { memo } from "react";
-import { useExplorer } from "../../routes/explorer";
-import { useSelection } from "../../routes/explorer/SelectionContext";
-import { QuickPreviewFullscreen } from "./QuickPreviewFullscreen";
+import type {File} from '@sd/ts-client';
+import {memo, useMemo} from 'react';
+import {useExplorer} from '../../routes/explorer';
+import {useSelection} from '../../routes/explorer/SelectionContext';
+import {QuickPreviewFullscreen} from './QuickPreviewFullscreen';
 
 /**
  * QuickPreviewController - Handles QuickPreview with navigation
@@ -11,43 +12,54 @@ import { QuickPreviewFullscreen } from "./QuickPreviewFullscreen";
  */
 export const QuickPreviewController = memo(function QuickPreviewController({
 	sidebarWidth,
-	inspectorWidth,
+	inspectorWidth
 }: {
 	sidebarWidth: number;
 	inspectorWidth: number;
 }) {
-	const { quickPreviewFileId, closeQuickPreview, currentFiles } =
-		useExplorer();
-	const { selectFile } = useSelection();
+	const {quickPreviewFileId, closeQuickPreview, currentFiles} = useExplorer();
+	const {selectedFiles, selectFile} = useSelection();
 
 	// Early return if no preview - this component won't re-render on selection changes
 	// because it's memoized and doesn't read selectedFiles directly
 	if (!quickPreviewFileId) return null;
 
-	const currentIndex = currentFiles.findIndex(
-		(f) => f.id === quickPreviewFileId,
+	// Find the file from selectedFiles first (most reliable for ephemeral files),
+	// then fallback to currentFiles
+	const previewFile = useMemo(() => {
+		const fromSelection = selectedFiles.find(
+			(f) => f.id === quickPreviewFileId
+		);
+		if (fromSelection) return fromSelection;
+		return currentFiles.find((f) => f.id === quickPreviewFileId) ?? null;
+	}, [selectedFiles, currentFiles, quickPreviewFileId]);
+
+	// Build a map of files for navigation (use currentFiles for navigation context)
+	const filesForNavigation = currentFiles;
+	const currentIndex = filesForNavigation.findIndex(
+		(f) => f.id === quickPreviewFileId
 	);
 	const hasPrevious = currentIndex > 0;
-	const hasNext = currentIndex < currentFiles.length - 1;
+	const hasNext = currentIndex < filesForNavigation.length - 1;
 
 	const handleNext = () => {
-		if (hasNext && currentFiles[currentIndex + 1]) {
+		if (hasNext && filesForNavigation[currentIndex + 1]) {
 			selectFile(
-				currentFiles[currentIndex + 1],
-				currentFiles,
+				filesForNavigation[currentIndex + 1],
+				filesForNavigation,
 				false,
-				false,
+				false
 			);
 		}
 	};
 
 	const handlePrevious = () => {
-		if (hasPrevious && currentFiles[currentIndex - 1]) {
+		if (hasPrevious && filesForNavigation[currentIndex - 1]) {
 			selectFile(
-				currentFiles[currentIndex - 1],
-				currentFiles,
+				filesForNavigation[currentIndex - 1],
+				filesForNavigation,
 				false,
-				false,
+				false
 			);
 		}
 	};
@@ -55,6 +67,7 @@ export const QuickPreviewController = memo(function QuickPreviewController({
 	return (
 		<QuickPreviewFullscreen
 			fileId={quickPreviewFileId}
+			file={previewFile}
 			isOpen={!!quickPreviewFileId}
 			onClose={closeQuickPreview}
 			onNext={handleNext}
