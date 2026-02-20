@@ -12,8 +12,8 @@
  * - Automatic cleanup when last listener unsubscribes
  */
 
-import type { Transport } from "./transport";
-import type { Event } from "./generated/types";
+import type {Event} from './generated/types';
+import type {Transport} from './transport';
 
 interface EventFilter {
 	library_id?: string;
@@ -34,8 +34,10 @@ interface SubscriptionEntry {
 
 export class SubscriptionManager {
 	private subscriptions = new Map<string, SubscriptionEntry>();
-	private pendingSubscriptions = new Map<string, Promise<SubscriptionEntry>>();
-	private cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private pendingSubscriptions = new Map<
+		string,
+		Promise<SubscriptionEntry>
+	>();
 	private transport: Transport;
 
 	constructor(transport: Transport) {
@@ -52,7 +54,7 @@ export class SubscriptionManager {
 			resource_type: filter.resource_type ?? null,
 			path_scope: filter.path_scope ?? null,
 			include_descendants: filter.include_descendants ?? false,
-			event_types: filter.event_types ?? [],
+			event_types: filter.event_types ?? []
 		});
 	}
 
@@ -63,20 +65,16 @@ export class SubscriptionManager {
 	 */
 	async subscribe(
 		filter: EventFilter,
-		callback: (event: Event) => void,
+		callback: (event: Event) => void
 	): Promise<() => void> {
 		const key = this.getFilterKey(filter);
 
 		// Check if subscription already exists
 		let entry = this.subscriptions.get(key);
 		if (entry) {
-			// Cancel any pending cleanup timer (a new subscriber is joining)
-			const existingTimer = this.cleanupTimers.get(key);
-			if (existingTimer) {
-				clearTimeout(existingTimer);
-				this.cleanupTimers.delete(key);
-			}
-			console.log(`[SubscriptionManager] Reusing existing subscription for key: ${key}, refCount: ${entry.refCount} -> ${entry.refCount + 1}`);
+			console.log(
+				`[SubscriptionManager] Reusing existing subscription for key: ${key}, refCount: ${entry.refCount} -> ${entry.refCount + 1}`
+			);
 			entry.listeners.add(callback);
 			entry.refCount++;
 			return this.createCleanup(key, callback);
@@ -85,7 +83,9 @@ export class SubscriptionManager {
 		// Check if subscription is being created (concurrent request)
 		const pending = this.pendingSubscriptions.get(key);
 		if (pending) {
-			console.log(`[SubscriptionManager] Waiting for pending subscription: ${key}`);
+			console.log(
+				`[SubscriptionManager] Waiting for pending subscription: ${key}`
+			);
 			// Wait for the in-progress subscription to complete
 			entry = await pending;
 			entry.listeners.add(callback);
@@ -94,7 +94,9 @@ export class SubscriptionManager {
 		}
 
 		// Create new subscription
-		console.log(`[SubscriptionManager] Creating new subscription for key: ${key}`);
+		console.log(
+			`[SubscriptionManager] Creating new subscription for key: ${key}`
+		);
 		const subscriptionPromise = this.createSubscription(key, filter);
 		this.pendingSubscriptions.set(key, subscriptionPromise);
 
@@ -102,7 +104,9 @@ export class SubscriptionManager {
 			entry = await subscriptionPromise;
 			entry.listeners.add(callback);
 			entry.refCount++;
-			console.log(`[SubscriptionManager] New subscription created, refCount: ${entry.refCount}`);
+			console.log(
+				`[SubscriptionManager] New subscription created, refCount: ${entry.refCount}`
+			);
 			return this.createCleanup(key, callback);
 		} finally {
 			this.pendingSubscriptions.delete(key);
@@ -111,13 +115,13 @@ export class SubscriptionManager {
 
 	private async createSubscription(
 		key: string,
-		filter: EventFilter,
+		filter: EventFilter
 	): Promise<SubscriptionEntry> {
 		const eventTypes = filter.event_types ?? [
-			"ResourceChanged",
-			"ResourceChangedBatch",
-			"ResourceDeleted",
-			"Refresh",
+			'ResourceChanged',
+			'ResourceChangedBatch',
+			'ResourceDeleted',
+			'Refresh'
 		];
 
 		const unsubscribe = await this.transport.subscribe(
@@ -125,7 +129,9 @@ export class SubscriptionManager {
 				// Broadcast event to all listeners
 				const currentEntry = this.subscriptions.get(key);
 				if (currentEntry) {
-					currentEntry.listeners.forEach((listener) => listener(event));
+					currentEntry.listeners.forEach((listener) =>
+						listener(event)
+					);
 				}
 			},
 			{
@@ -134,15 +140,15 @@ export class SubscriptionManager {
 					resource_type: filter.resource_type,
 					path_scope: filter.path_scope,
 					library_id: filter.library_id,
-					include_descendants: filter.include_descendants,
-				},
-			},
+					include_descendants: filter.include_descendants
+				}
+			}
 		);
 
 		const entry: SubscriptionEntry = {
 			unsubscribe,
 			listeners: new Set(),
-			refCount: 0,
+			refCount: 0
 		};
 
 		this.subscriptions.set(key, entry);
@@ -151,7 +157,7 @@ export class SubscriptionManager {
 
 	private createCleanup(
 		key: string,
-		callback: (event: Event) => void,
+		callback: (event: Event) => void
 	): () => void {
 		return () => {
 			const currentEntry = this.subscriptions.get(key);
@@ -161,23 +167,18 @@ export class SubscriptionManager {
 
 			currentEntry.listeners.delete(callback);
 			currentEntry.refCount--;
-			console.log(`[SubscriptionManager] Cleanup called for key: ${key}, refCount: ${currentEntry.refCount + 1} -> ${currentEntry.refCount}`);
+			console.log(
+				`[SubscriptionManager] Cleanup called for key: ${key}, refCount: ${currentEntry.refCount + 1} -> ${currentEntry.refCount}`
+			);
 
 			if (currentEntry.refCount === 0) {
-				// Debounce the actual unsubscription to handle rapid mount/unmount cycles
-				// (e.g., React re-renders, navigation between directories)
-				// If a new subscriber joins within 500ms, the cleanup timer is cancelled
-				const timer = setTimeout(() => {
-					this.cleanupTimers.delete(key);
-					// Re-check refCount in case a new subscriber joined during the debounce
-					const entry = this.subscriptions.get(key);
-					if (entry && entry.refCount === 0) {
-						console.log(`[SubscriptionManager] RefCount still 0 after debounce, unsubscribing from key: ${key}`);
-						entry.unsubscribe();
-						this.subscriptions.delete(key);
-					}
-				}, 500);
-				this.cleanupTimers.set(key, timer);
+				// Immediate cleanup - no debouncing needed since TabManagerContext
+				// now uses stable references and useSyncExternalStore
+				console.log(
+					`[SubscriptionManager] RefCount is 0, unsubscribing from key: ${key}`
+				);
+				currentEntry.unsubscribe();
+				this.subscriptions.delete(key);
 			}
 		};
 	}
@@ -192,9 +193,9 @@ export class SubscriptionManager {
 				([key, entry]) => ({
 					key,
 					refCount: entry.refCount,
-					listenerCount: entry.listeners.size,
-				}),
-			),
+					listenerCount: entry.listeners.size
+				})
+			)
 		};
 	}
 
@@ -203,11 +204,8 @@ export class SubscriptionManager {
 	 */
 	destroy() {
 		console.log(
-			`[SubscriptionManager] Destroying ${this.subscriptions.size} subscriptions`,
+			`[SubscriptionManager] Destroying ${this.subscriptions.size} subscriptions`
 		);
-		// Clear all debounce timers
-		this.cleanupTimers.forEach((timer) => clearTimeout(timer));
-		this.cleanupTimers.clear();
 		this.subscriptions.forEach((entry) => entry.unsubscribe());
 		this.subscriptions.clear();
 	}

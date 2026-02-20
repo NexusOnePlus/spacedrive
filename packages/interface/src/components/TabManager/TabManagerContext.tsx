@@ -1,12 +1,15 @@
 import {
 	createContext,
-	useState,
 	useCallback,
-	useMemo,
 	useEffect,
-	type ReactNode,
-} from "react";
-import { createBrowserRouter, type RouteObject } from "react-router-dom";
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+	type ReactNode
+} from 'react';
+import {createBrowserRouter, type RouteObject} from 'react-router-dom';
+
 type Router = ReturnType<typeof createBrowserRouter>;
 
 /**
@@ -14,62 +17,62 @@ type Router = ReturnType<typeof createBrowserRouter>;
  */
 function deriveTitleFromPath(pathname: string, search: string): string {
 	const routeTitles: Record<string, string> = {
-		"/": "Overview",
-		"/favorites": "Favorites",
-		"/recents": "Recents",
-		"/file-kinds": "File Kinds",
-		"/search": "Search",
-		"/jobs": "Jobs",
-		"/daemon": "Daemon",
+		'/': 'Overview',
+		'/favorites': 'Favorites',
+		'/recents': 'Recents',
+		'/file-kinds': 'File Kinds',
+		'/search': 'Search',
+		'/jobs': 'Jobs',
+		'/daemon': 'Daemon'
 	};
 
 	if (routeTitles[pathname]) {
 		return routeTitles[pathname];
 	}
 
-	if (pathname.startsWith("/tag/")) {
-		const tagId = pathname.split("/")[2];
-		return tagId ? `Tag: ${tagId.slice(0, 8)}...` : "Tag";
+	if (pathname.startsWith('/tag/')) {
+		const tagId = pathname.split('/')[2];
+		return tagId ? `Tag: ${tagId.slice(0, 8)}...` : 'Tag';
 	}
 
-	if (pathname === "/explorer" && search) {
+	if (pathname === '/explorer' && search) {
 		const params = new URLSearchParams(search);
 
-		const view = params.get("view");
-		if (view === "device") {
-			return "This Device";
+		const view = params.get('view');
+		if (view === 'device') {
+			return 'This Device';
 		}
 
-		const pathParam = params.get("path");
+		const pathParam = params.get('path');
 		if (pathParam) {
 			try {
 				const sdPath = JSON.parse(decodeURIComponent(pathParam));
 				if (sdPath?.Physical?.path) {
 					const fullPath = sdPath.Physical.path as string;
-					const parts = fullPath.split("/").filter(Boolean);
-					return parts[parts.length - 1] || "Explorer";
+					const parts = fullPath.split('/').filter(Boolean);
+					return parts[parts.length - 1] || 'Explorer';
 				}
 			} catch {
 				// Fall through
 			}
 		}
-		return "Explorer";
+		return 'Explorer';
 	}
 
-	return "Spacedrive";
+	return 'Spacedrive';
 }
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type ViewMode = "grid" | "list" | "column" | "media" | "size";
+export type ViewMode = 'grid' | 'list' | 'column' | 'media' | 'size';
 export type SortBy =
-	| "name"
-	| "size"
-	| "date_modified"
-	| "date_created"
-	| "kind";
+	| 'name'
+	| 'size'
+	| 'date_modified'
+	| 'date_created'
+	| 'kind';
 
 export interface Tab {
 	id: string;
@@ -100,27 +103,27 @@ export interface TabExplorerState {
 	scrollLeft: number;
 
 	// Size view transform (zoom + pan)
-	sizeViewTransform: { k: number; x: number; y: number };
+	sizeViewTransform: {k: number; x: number; y: number};
 }
 
 /** Default explorer state for new tabs */
 const DEFAULT_EXPLORER_STATE: TabExplorerState = {
-	viewMode: "grid",
-	sortBy: "name",
+	viewMode: 'grid',
+	sortBy: 'name',
 	gridSize: 120,
 	gapSize: 16,
 	foldersFirst: true,
 	columnStack: [],
 	scrollTop: 0,
 	scrollLeft: 0,
-	sizeViewTransform: { k: 1, x: 0, y: 0 },
+	sizeViewTransform: {k: 1, x: 0, y: 0}
 };
 
 // ============================================================================
 // Persistence
 // ============================================================================
 
-const STORAGE_KEY = "sd-tabs-state";
+const STORAGE_KEY = 'sd-tabs-state';
 
 interface PersistedState {
 	tabs: Tab[];
@@ -139,8 +142,8 @@ function loadPersistedState(): PersistedState | null {
 		// Validate structure
 		if (
 			!Array.isArray(parsed.tabs) ||
-			typeof parsed.activeTabId !== "string" ||
-			typeof parsed.explorerStates !== "object"
+			typeof parsed.activeTabId !== 'string' ||
+			typeof parsed.explorerStates !== 'object'
 		) {
 			return null;
 		}
@@ -158,6 +161,57 @@ function savePersistedState(state: PersistedState): void {
 		// Silently fail if localStorage is unavailable
 	}
 }
+
+// ============================================================================
+// External Explorer State Store (avoids context re-render loops)
+// ============================================================================
+
+type ExplorerStateListener = (tabId: string) => void;
+
+class ExplorerStateStore {
+	private states: Map<string, TabExplorerState> = new Map();
+	private listeners: Set<ExplorerStateListener> = new Set();
+
+	getState(tabId: string): TabExplorerState {
+		return this.states.get(tabId) ?? {...DEFAULT_EXPLORER_STATE};
+	}
+
+	setState(tabId: string, state: TabExplorerState): void {
+		this.states.set(tabId, state);
+		this.notifyListeners(tabId);
+	}
+
+	updateState(tabId: string, updates: Partial<TabExplorerState>): void {
+		const current = this.states.get(tabId) ?? {...DEFAULT_EXPLORER_STATE};
+		this.states.set(tabId, {...current, ...updates});
+		this.notifyListeners(tabId);
+	}
+
+	deleteState(tabId: string): void {
+		this.states.delete(tabId);
+		this.notifyListeners(tabId);
+	}
+
+	getAllStates(): Record<string, TabExplorerState> {
+		return Object.fromEntries(this.states);
+	}
+
+	loadFromRecord(record: Record<string, TabExplorerState>): void {
+		this.states = new Map(Object.entries(record));
+		this.listeners.forEach((l) => l(''));
+	}
+
+	subscribe(listener: ExplorerStateListener): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	private notifyListeners(tabId: string): void {
+		this.listeners.forEach((l) => l(tabId));
+	}
+}
+
+const explorerStateStore = new ExplorerStateStore();
 
 // ============================================================================
 // Context
@@ -183,7 +237,7 @@ interface TabManagerContextValue {
 	getExplorerState: (tabId: string) => TabExplorerState;
 	updateExplorerState: (
 		tabId: string,
-		updates: Partial<TabExplorerState>,
+		updates: Partial<TabExplorerState>
 	) => void;
 
 	// Selection state (per-tab, ephemeral - not persisted)
@@ -204,7 +258,7 @@ interface TabManagerProviderProps {
 
 export function TabManagerProvider({
 	children,
-	routes,
+	routes
 }: TabManagerProviderProps) {
 	const router = useMemo(() => createBrowserRouter(routes), [routes]);
 
@@ -218,12 +272,12 @@ export function TabManagerProvider({
 		return [
 			{
 				id: initialTabId,
-				title: "Overview",
+				title: 'Overview',
 				icon: null,
 				isPinned: false,
 				lastActive: Date.now(),
-				savedPath: "/",
-			},
+				savedPath: '/'
+			}
 		];
 	});
 
@@ -232,25 +286,24 @@ export function TabManagerProvider({
 		if (persisted && persisted.activeTabId) {
 			// Verify the activeTabId exists in tabs
 			const tabExists = persisted.tabs.some(
-				(t) => t.id === persisted.activeTabId,
+				(t) => t.id === persisted.activeTabId
 			);
 			if (tabExists) return persisted.activeTabId;
 		}
 		return tabs[0].id;
 	});
 
-	const [explorerStates, setExplorerStates] = useState<
-		Map<string, TabExplorerState>
-	>(() => {
+	// Initialize explorer state store from persisted state
+	useEffect(() => {
 		const persisted = loadPersistedState();
 		if (persisted && persisted.explorerStates) {
-			return new Map(Object.entries(persisted.explorerStates));
+			explorerStateStore.loadFromRecord(persisted.explorerStates);
+		} else {
+			explorerStateStore.setState(tabs[0].id, {
+				...DEFAULT_EXPLORER_STATE
+			});
 		}
-
-		const initialMap = new Map<string, TabExplorerState>();
-		initialMap.set(tabs[0].id, { ...DEFAULT_EXPLORER_STATE });
-		return initialMap;
-	});
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// Per-tab selection state (ephemeral, not persisted to localStorage)
 	const [selectionStates, setSelectionStates] = useState<
@@ -265,8 +318,8 @@ export function TabManagerProvider({
 	const [defaultNewTabPath, setDefaultNewTabPathState] = useState<string>(
 		() => {
 			const persisted = loadPersistedState();
-			return persisted?.defaultNewTabPath ?? "/";
-		},
+			return persisted?.defaultNewTabPath ?? '/';
+		}
 	);
 
 	// ========================================================================
@@ -274,15 +327,13 @@ export function TabManagerProvider({
 	// ========================================================================
 
 	useEffect(() => {
-		const explorerStatesObject = Object.fromEntries(explorerStates);
-
 		savePersistedState({
 			tabs,
 			activeTabId,
-			explorerStates: explorerStatesObject,
-			defaultNewTabPath,
+			explorerStates: explorerStateStore.getAllStates(),
+			defaultNewTabPath
 		});
-	}, [tabs, activeTabId, explorerStates, defaultNewTabPath]);
+	}, [tabs, activeTabId, defaultNewTabPath]);
 
 	// ========================================================================
 	// Tab management
@@ -295,10 +346,10 @@ export function TabManagerProvider({
 	const createTab = useCallback(
 		(title?: string, path?: string) => {
 			const tabPath = path ?? defaultNewTabPath;
-			const [pathname, search = ""] = tabPath.split("?");
+			const [pathname, search = ''] = tabPath.split('?');
 			const derivedTitle =
 				title ||
-				deriveTitleFromPath(pathname, search ? `?${search}` : "");
+				deriveTitleFromPath(pathname, search ? `?${search}` : '');
 
 			const newTab: Tab = {
 				id: crypto.randomUUID(),
@@ -306,13 +357,11 @@ export function TabManagerProvider({
 				icon: null,
 				isPinned: false,
 				lastActive: Date.now(),
-				savedPath: tabPath,
+				savedPath: tabPath
 			};
 
-			// Initialize explorer state for the new tab
-			setExplorerStates((prev) =>
-				new Map(prev).set(newTab.id, { ...DEFAULT_EXPLORER_STATE }),
-			);
+			// Initialize explorer state for the new tab (in external store)
+			explorerStateStore.setState(newTab.id, {...DEFAULT_EXPLORER_STATE});
 
 			// Initialize empty selection state for the new tab
 			setSelectionStates((prev) => new Map(prev).set(newTab.id, []));
@@ -320,7 +369,7 @@ export function TabManagerProvider({
 			setTabs((prev) => [...prev, newTab]);
 			setActiveTabId(newTab.id);
 		},
-		[defaultNewTabPath],
+		[defaultNewTabPath]
 	);
 
 	const closeTab = useCallback(
@@ -344,12 +393,8 @@ export function TabManagerProvider({
 				return filtered;
 			});
 
-			// Clean up explorer state for closed tab
-			setExplorerStates((prev) => {
-				const next = new Map(prev);
-				next.delete(tabId);
-				return next;
-			});
+			// Clean up explorer state for closed tab (in external store)
+			explorerStateStore.deleteState(tabId);
 
 			// Clean up selection state for closed tab
 			setSelectionStates((prev) => {
@@ -358,7 +403,7 @@ export function TabManagerProvider({
 				return next;
 			});
 		},
-		[activeTabId],
+		[activeTabId]
 	);
 
 	const switchTab = useCallback(
@@ -369,28 +414,26 @@ export function TabManagerProvider({
 
 			setTabs((prev) =>
 				prev.map((tab) =>
-					tab.id === newTabId
-						? { ...tab, lastActive: Date.now() }
-						: tab,
-				),
+					tab.id === newTabId ? {...tab, lastActive: Date.now()} : tab
+				)
 			);
 
 			setActiveTabId(newTabId);
 		},
-		[activeTabId],
+		[activeTabId]
 	);
 
 	const updateTabTitle = useCallback((tabId: string, title: string) => {
 		setTabs((prev) =>
-			prev.map((tab) => (tab.id === tabId ? { ...tab, title } : tab)),
+			prev.map((tab) => (tab.id === tabId ? {...tab, title} : tab))
 		);
 	}, []);
 
 	const updateTabPath = useCallback((tabId: string, path: string) => {
 		setTabs((prev) =>
 			prev.map((tab) =>
-				tab.id === tabId ? { ...tab, savedPath: path } : tab,
-			),
+				tab.id === tabId ? {...tab, savedPath: path} : tab
+			)
 		);
 	}, []);
 
@@ -429,30 +472,25 @@ export function TabManagerProvider({
 				switchTab(tabs[index].id);
 			}
 		},
-		[tabs, switchTab],
+		[tabs, switchTab]
 	);
 
 	// ========================================================================
-	// Explorer state (per-tab)
+	// Explorer state (per-tab) - using external store to avoid re-render loops
 	// ========================================================================
 
 	const getExplorerState = useCallback(
 		(tabId: string): TabExplorerState => {
-			return explorerStates.get(tabId) ?? { ...DEFAULT_EXPLORER_STATE };
+			return explorerStateStore.getState(tabId);
 		},
-		[explorerStates],
+		[] // Stable reference - always returns current state from store
 	);
 
 	const updateExplorerState = useCallback(
 		(tabId: string, updates: Partial<TabExplorerState>) => {
-			setExplorerStates((prev) => {
-				const current = prev.get(tabId) ?? {
-					...DEFAULT_EXPLORER_STATE,
-				};
-				return new Map(prev).set(tabId, { ...current, ...updates });
-			});
+			explorerStateStore.updateState(tabId, updates);
 		},
-		[],
+		[] // Stable reference
 	);
 
 	// ========================================================================
@@ -463,12 +501,15 @@ export function TabManagerProvider({
 		(tabId: string): string[] => {
 			return selectionStates.get(tabId) ?? [];
 		},
-		[selectionStates],
+		[selectionStates]
 	);
 
-	const updateSelectionIds = useCallback((tabId: string, fileIds: string[]) => {
-		setSelectionStates((prev) => new Map(prev).set(tabId, fileIds));
-	}, []);
+	const updateSelectionIds = useCallback(
+		(tabId: string, fileIds: string[]) => {
+			setSelectionStates((prev) => new Map(prev).set(tabId, fileIds));
+		},
+		[]
+	);
 
 	// ========================================================================
 	// Context value
@@ -492,7 +533,7 @@ export function TabManagerProvider({
 			getExplorerState,
 			updateExplorerState,
 			getSelectionIds,
-			updateSelectionIds,
+			updateSelectionIds
 		}),
 		[
 			tabs,
@@ -508,11 +549,11 @@ export function TabManagerProvider({
 			previousTab,
 			selectTabAtIndex,
 			setDefaultNewTabPath,
-			getExplorerState,
-			updateExplorerState,
+			// getExplorerState and updateExplorerState are stable (empty deps)
+			// getSelectionIds and updateSelectionIds - only getSelectionIds changes
 			getSelectionIds,
-			updateSelectionIds,
-		],
+			updateSelectionIds
+		]
 	);
 
 	return (
@@ -522,4 +563,24 @@ export function TabManagerProvider({
 	);
 }
 
-export { TabManagerContext };
+/**
+ * Hook to subscribe to explorer state changes for a specific tab.
+ * Uses useSyncExternalStore to avoid re-render loops.
+ * This is the recommended way to read tab explorer state.
+ */
+export function useTabExplorerState(tabId: string): TabExplorerState {
+	const state = useSyncExternalStore(
+		(callback) =>
+			explorerStateStore.subscribe((changedTabId) => {
+				// Only notify if this tab changed
+				if (changedTabId === '' || changedTabId === tabId) {
+					callback();
+				}
+			}),
+		() => explorerStateStore.getState(tabId),
+		() => ({...DEFAULT_EXPLORER_STATE})
+	);
+	return state;
+}
+
+export {TabManagerContext};
